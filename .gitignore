@@ -1,0 +1,4 @@
+yahboom-hat
+.cache/
+build/
+*.o
