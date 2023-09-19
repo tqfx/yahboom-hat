@@ -141,7 +141,7 @@ void ssd1306_command(unsigned char c);
 
 void ssd1306_clearDisplay(void);
 void ssd1306_invertDisplay(unsigned int i);
-void ssd1306_display();
+void ssd1306_display(void);
 
 void ssd1306_startscrollright(unsigned int start, unsigned int stop);
 void ssd1306_startscrollleft(unsigned int start, unsigned int stop);

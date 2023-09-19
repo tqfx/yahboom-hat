@@ -198,7 +198,9 @@ int i2cd;
 void ssd1306_drawPixel(int x, int y, unsigned int color)
 {
     if ((x < 0) || (x >= WIDTH) || (y < 0) || (y >= HEIGHT))
+    {
         return;
+    }
 
     // check rotation, move pixel around if necessary
     switch (rotation)
@@ -336,7 +338,6 @@ void ssd1306_command(unsigned char c)
 {
     // I2C
     unsigned char control = 0x00; // Co = 0, D/C = 0
-    // wiringPiI2CWriteReg8(i2cd, control, c);
     i2c_write_8(i2cd, SSD1306_I2C_ADDRESS, control, &c, 1);
 }
 
@@ -344,8 +345,7 @@ void ssd1306_display(void)
 {
     ssd1306_command(SSD1306_COLUMNADDR);
     ssd1306_command(0); // Column start address (0 = reset)
-    ssd1306_command(SSD1306_LCDWIDTH - 1); // Column end address (127
-    // = reset)
+    ssd1306_command(SSD1306_LCDWIDTH - 1); // Column end address (127 = reset)
 
     ssd1306_command(SSD1306_PAGEADDR);
     ssd1306_command(0); // Page start address (0 = reset)
@@ -360,13 +360,10 @@ void ssd1306_display(void)
 #endif
 
     // I2C
-    int i;
-    unsigned char buff;
-    for (i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i++)
+    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i++)
     {
-        buff = buffer[i];
+        unsigned char buff = (unsigned char)buffer[i];
         i2c_write_8(i2cd, SSD1306_I2C_ADDRESS, 0x40, &buff, 1);
-        // wiringPiI2CWriteReg8(i2cd, 0x40, buffer[i]);
         // This sends byte by byte.
         // Better to send all buffer without 0x40 first
         // Should be optimized
@@ -642,7 +639,6 @@ void ssd1306_drawFastVLineInternal(int x, int __y, int __h, unsigned int color)
         {
             // store a local value to work with
             register unsigned int val = (color == WHITE) ? 255 : 0;
-
             do
             {
                 // write our value in
@@ -717,7 +713,6 @@ void ssd1306_drawFastHLine(int x, int y, int w, unsigned int color)
     default:
         break;
     }
-
     if (bSwap)
     {
         ssd1306_drawFastVLineInternal(x, y, w, color);
@@ -759,7 +754,6 @@ void ssd1306_drawFastVLine(int x, int y, int h, unsigned int color)
     default:
         break;
     }
-
     if (bSwap)
     {
         ssd1306_drawFastHLineInternal(x, y, h, color);
@@ -774,7 +768,9 @@ void ssd1306_fillRect(int x, int y, int w, int h, int fillcolor)
 {
     // Bounds check
     if ((x >= WIDTH) || (y >= HEIGHT))
+    {
         return;
+    }
 
     // Y bounds check
     if (y + h > HEIGHT)
@@ -804,9 +800,10 @@ void ssd1306_fillRect(int x, int y, int w, int h, int fillcolor)
     default:
         break;
     }
-    int i;
-    for (i = 0; i < h; i++)
+    for (int i = 0; i < h; i++)
+    {
         ssd1306_drawFastHLine(x, y + i, w, fillcolor);
+    }
 }
 
 int textsize = 1;
@@ -839,19 +836,19 @@ void ssd1306_write(int c)
 
 void ssd1306_drawString(char *str)
 {
-    int i, end;
-    end = strlen(str);
-    for (i = 0; i < end; i++)
+    int end = strlen(str);
+    for (int i = 0; i < end; i++)
+    {
         ssd1306_write(str[i]);
+    }
 }
 
 void ssd1306_drawText(int x, int y, char *str)
 {
-    int i, end;
-    end = strlen(str);
     int point_x = x;
     int point_y = y;
-    for (i = 0; i < end; i++)
+    int end = strlen(str);
+    for (int i = 0; i < end; i++)
     {
         if (str[i] == '\n')
         {
@@ -882,24 +879,30 @@ void ssd1306_drawChar(int x, int y, unsigned char c, int color, int size)
         (y >= HEIGHT) || // Clip bottom
         ((x + 6 * size - 1) < 0) || // Clip left
         ((y + 8 * size - 1) < 0)) // Clip top
+    {
         return;
-    int i;
-    int j;
-    for (i = 0; i < 6; i++)
+    }
+    for (int i = 0; i < 6; i++)
     {
         int line;
         if (i == 5)
+        {
             line = 0x0;
+        }
         else
+        {
             line = pgm_read_byte(font + (c * 5) + i);
-        for (j = 0; j < 8; j++)
+        }
+        for (int j = 0; j < 8; j++)
         {
             if (line & 0x1)
             {
                 if (size == 1) // default size
+                {
                     ssd1306_drawPixel(x + i, y + j, color);
-                else
-                { // big size
+                }
+                else // big size
+                {
                     ssd1306_fillRect(x + (i * size), y + (j * size), size, size, color);
                 }
             }
