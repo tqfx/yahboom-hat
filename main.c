@@ -110,7 +110,7 @@ static uint32_t bkdr(void const *const _str)
     {
         for (uint8_t const *str = (uint8_t const *)_str; *str; ++str)
         {
-            val = val * 131 + *str;
+            val = val * 131 + tolower(*str);
         }
     }
     return val;
@@ -389,7 +389,7 @@ static int get_disk(char *buffer)
     {
         unsigned long long free = info.f_bfree * info.f_bsize;
         unsigned long long total = info.f_blocks * info.f_bsize;
-        sprintf(buffer, "Disk:%lu/%luMB", (unsigned long)(free >> 20), (unsigned long)(total >> 20));
+        sprintf(buffer, "DISK:%lu/%luMB", (unsigned long)(free >> 20), (unsigned long)(total >> 20));
         ok = 1;
     }
     return ok;
@@ -449,13 +449,13 @@ void model_init(void)
         i2c_write_8(model.dev.i2c, MODEL_I2C_ADDR, model.i2c[0], model.i2c + 1, 1);
         exit(EXIT_SUCCESS);
     }
+    for (unsigned int i = 0; i < 3; ++i)
+    {
+        rgb_set(model.dev.i2c, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
+    }
     if (model.led.mode == BKDR_DISABLE)
     {
         rgb_off(model.dev.i2c);
-        for (unsigned int i = 0; i < 3; ++i)
-        {
-            rgb_set(model.dev.i2c, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
-        }
     }
     else
     {
@@ -561,11 +561,11 @@ void model_exec(void)
         rgb_fan(model.dev.i2c, speed);
     }
     {
-        char buffer[32];
+        char buffer[64];
         ssd1306_clearDisplay();
         sprintf(buffer, "CPU:%u%%", cpu_get_usage());
         ssd1306_drawText(0, 0, buffer);
-        sprintf(buffer, "Temp:%.1fC", model.cpu.temp / 1000.F);
+        sprintf(buffer, "TEMP:%.1fC", model.cpu.temp / 1000.F);
         ssd1306_drawText(56, 0, buffer);
         get_ram(buffer);
         ssd1306_drawText(0, 8, buffer);
