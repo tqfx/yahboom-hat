@@ -120,17 +120,18 @@ static unsigned int byte_parse(uint8_t *ptr, size_t num, char *text)
     unsigned int parsed = 0;
     if (ptr && num && text)
     {
-        while (*text)
+        do
         {
-            *ptr++ = (uint8_t)strtol(text, &text, 0);
-            if (++parsed == num)
+            while (*text && !isdigit(*text))
+            {
+                ++text;
+            }
+            if (*text == 0)
             {
                 break;
             }
-            for (; *text && !isdigit(*text); ++text)
-            {
-            }
-        }
+            *ptr++ = (uint8_t)strtol(text, &text, 0);
+        } while (++parsed < num && *text);
     }
     return parsed;
 }
@@ -296,9 +297,7 @@ static void model_load_led(void)
 
 static void model_load_fan(void)
 {
-    uint8_t bound;
     char buffer[128];
-    char *endptr = buffer;
     if (model.verbose)
     {
         puts("[fan]");
@@ -314,18 +313,24 @@ static void model_load_fan(void)
         case BKDR_DIRECT:
             mode = "direct";
             break;
+        default:
+        case BKDR_SINGLE:
+            mode = "single";
+            break;
         case BKDR_GRADED:
             mode = "graded";
-            break;
-        case BKDR_SINGLE:
-        default:
-            mode = "single";
             break;
         }
         printf("mode=%s\n", mode);
     }
 
+    uint8_t bound;
+    char *endptr = buffer;
     ini_gets("fan", "bound", "", buffer, sizeof(buffer), model.config);
+    while (*endptr && !isdigit(*endptr))
+    {
+        ++endptr;
+    }
     bound = (uint8_t)strtol(endptr, &endptr, 0);
     if (bound > 0)
     {
