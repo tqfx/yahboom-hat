@@ -94,8 +94,8 @@ static struct model
 #define BKDR_GRADED 0x106F56A9
         uint32_t mode;
     } fan;
-    uint8_t i2c[8];
     char const *config;
+    uint8_t i2c[3];
     _Bool verbose;
     _Bool set;
     _Bool get;
@@ -107,9 +107,9 @@ static struct model
      BKDR_DISABLE,
      BKDR_MIDDLE,
      BKDR_GRADED},
-    {{45, 60}, 0, MODEL_FAN_SPEED_MAX, BKDR_SINGLE},
-    {0, 0, 0, 0, 0, 0, 0, 0},
+    {{42, 60}, 0, MODEL_FAN_SPEED_MAX, BKDR_SINGLE},
     MODEL_CONFIG,
+    {0, 0, 0},
     false,
     false,
     false,
@@ -478,13 +478,13 @@ static void model_init(void)
     }
     if (model.get)
     {
-        i2c_read(model.dev.i2c, MODEL_I2C_ADDR, model.i2c[0], model.i2c + 1, 1);
-        printf("0x%02X\n", model.i2c[1]);
+        i2c_read(model.dev.i2c, model.i2c[0], model.i2c[1], model.i2c + 2);
+        printf("0x%02X\n", model.i2c[2]);
         exit(EXIT_SUCCESS);
     }
     if (model.set)
     {
-        i2c_write_8(model.dev.i2c, MODEL_I2C_ADDR, model.i2c[0], model.i2c + 1, 1);
+        i2c_write(model.dev.i2c, model.i2c[0], model.i2c[1], model.i2c[2]);
         exit(EXIT_SUCCESS);
     }
     for (unsigned int i = 0; i < 3; ++i)
@@ -556,11 +556,8 @@ static void model_init(void)
             break;
         }
     }
-    if (model.fan.mode == BKDR_DIRECT)
-    {
-        rgb_fan(model.dev.i2c, model.fan.speed);
-    }
-    i2c_read(model.dev.i2c, MODEL_I2C_ADDR, 0x08, &model.fan.current_speed, 1);
+    rgb_fan(model.dev.i2c, model.fan.speed);
+    model.fan.current_speed = model.fan.speed;
     ssd1306_begin(SSD1306_SWITCHCAPVCC, model.dev.i2c);
     ssd1306_clearDisplay();
     ssd1306_display();
@@ -655,11 +652,11 @@ int main(int argc, char *argv[])
         case 'h':
         default:
             printf("Usage: %s [options]\nOptions:\n", argv[0]);
-            puts("      --get REG        Get the value of the register");
-            puts("      --set REG,VAL    Set the value of the register");
-            puts("  -c, --config FILE    Default configuration file: " MODEL_CONFIG);
-            puts("  -v, --verbose        Display detailed log information");
-            puts("  -h, --help           Display available options");
+            puts("      --get DEV,REG     Get the value of the register");
+            puts("      --set DEV,REG,VAL Set the value of the register");
+            puts("  -c, --config FILE     Default configuration file: " MODEL_CONFIG);
+            puts("  -v, --verbose         Display detailed log information");
+            puts("  -h, --help            Display available options");
             exit(EXIT_SUCCESS);
         }
     }

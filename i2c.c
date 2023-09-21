@@ -4,27 +4,19 @@
 #include <linux/i2c.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include <string.h>
 
-int i2c_write_8(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned char *data_buf, unsigned int len)
+int i2c_write(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned char data_buf)
 {
-    unsigned char msg_buf[9];
+    unsigned char msg_buf[2];
     struct i2c_msg messages;
     struct i2c_rdwr_ioctl_data data;
 
     msg_buf[0] = reg_addr;
-    if (len < sizeof(msg_buf))
-    {
-        memcpy(msg_buf + 1, data_buf, len);
-    }
-    else
-    {
-        return ~0;
-    }
+    msg_buf[1] = data_buf;
 
     messages.addr = dev_addr;
     messages.flags = 0;
-    messages.len = len + 1;
+    messages.len = 2;
     messages.buf = msg_buf;
 
     data.msgs = &messages;
@@ -38,7 +30,7 @@ int i2c_write_8(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned
     return 0;
 }
 
-int i2c_read(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned char *data_buf, unsigned int len)
+int i2c_read(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned char *data_buf)
 {
     struct i2c_msg messages[2];
     struct i2c_rdwr_ioctl_data data;
@@ -50,7 +42,7 @@ int i2c_read(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned ch
 
     messages[1].addr = dev_addr;
     messages[1].flags = I2C_M_RD;
-    messages[1].len = len;
+    messages[1].len = 1;
     messages[1].buf = data_buf;
 
     data.msgs = messages;
@@ -60,6 +52,6 @@ int i2c_read(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned ch
         return ~0;
     }
 
-    usleep(50);
+    usleep(100);
     return 0;
 }

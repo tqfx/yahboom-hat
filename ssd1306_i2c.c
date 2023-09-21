@@ -338,8 +338,13 @@ void ssd1306_command(unsigned char c)
 {
     // I2C
     unsigned char control = 0x00; // Co = 0, D/C = 0
-    i2c_write_8(i2cd, SSD1306_I2C_ADDRESS, control, &c, 1);
+    i2c_write(i2cd, SSD1306_I2C_ADDRESS, control, c);
 }
+
+#include <linux/i2c-dev.h>
+#include <linux/i2c.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 void ssd1306_display(void)
 {
@@ -360,13 +365,31 @@ void ssd1306_display(void)
 #endif
 
     // I2C
-    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i++)
+    int *buffer_p = buffer;
+    unsigned char msg_buf[1 + 64] = {0x40};
+    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i += 64)
     {
-        unsigned char buff = (unsigned char)buffer[i];
-        i2c_write_8(i2cd, SSD1306_I2C_ADDRESS, 0x40, &buff, 1);
-        // This sends byte by byte.
-        // Better to send all buffer without 0x40 first
-        // Should be optimized
+        struct i2c_msg messages;
+        struct i2c_rdwr_ioctl_data data;
+
+        for (unsigned char *p = msg_buf + 1, *q = p + 64; p < q;)
+        {
+            *p++ = *buffer_p++;
+        }
+
+        messages.addr = SSD1306_I2C_ADDRESS;
+        messages.flags = 0;
+        messages.len = sizeof(msg_buf);
+        messages.buf = msg_buf;
+
+        data.msgs = &messages;
+        data.nmsgs = 1;
+
+        for (int try = 0; ioctl(i2cd, I2C_RDWR, &data) < 0 && try < 3; ++try)
+        {
+        }
+
+        usleep(1000);
     }
 }
 
