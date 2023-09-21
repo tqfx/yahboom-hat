@@ -1,7 +1,7 @@
 /*
  Raspberry Pi RGB Cooling HAT with adjustable fan and OLED display for 4B/3B+/3B
 
- Copyright (C) 2023  tqfx
+ Copyright (C) 2023 tqfx <tqfx@foxmail.com>
 
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU Affero General Public License as published
@@ -36,6 +36,8 @@
 #include "i2c.h"
 #include "rgb.h"
 
+#define false 0
+#define true !false
 static struct model
 {
     struct
@@ -44,8 +46,15 @@ static struct model
     } dev;
     struct
     {
-        unsigned int temp;
+        int temp;
+        long idle, total;
+        unsigned int usage;
     } cpu;
+    struct
+    {
+#define MODEL_CFG_SLEEP 1
+        unsigned int sleep;
+    } cfg;
     struct
     {
         uint8_t rgb[3][3];
@@ -88,10 +97,12 @@ static struct model
     uint8_t i2c[8];
     char const *config;
     _Bool verbose;
-    _Bool write;
+    _Bool set;
+    _Bool get;
 } model = {
     {0},
-    {0},
+    {0, 0, 0, 0},
+    {MODEL_CFG_SLEEP},
     {{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}},
      BKDR_DISABLE,
      BKDR_MIDDLE,
@@ -99,39 +110,12 @@ static struct model
     {{45, 60}, 0, MODEL_FAN_SPEED_MAX, BKDR_SINGLE},
     {0, 0, 0, 0, 0, 0, 0, 0},
     MODEL_CONFIG,
-    MODEL_VERBOSE,
-    0,
+    false,
+    false,
+    false,
 };
 
-static uint32_t bkdr(void const *const _str)
-{
-    uint32_t val = 0;
-    if (_str)
-    {
-        for (uint8_t const *str = (uint8_t const *)_str; *str; ++str)
-        {
-            val = val * 131 + tolower(*str);
-        }
-    }
-    return val;
-}
-
-void model_load_device(void)
-{
-    char buffer[128];
-    if (model.verbose)
-    {
-        puts("[device]");
-    }
-    ini_gets("device", "i2c", MODEL_DEVICE_I2C, buffer, sizeof(buffer), model.config);
-    if (model.verbose)
-    {
-        printf("i2c=%s\n", buffer);
-    }
-    model.dev.i2c = open(buffer, O_RDWR);
-}
-
-unsigned int u8_parse(uint8_t *ptr, size_t num, char *text)
+static unsigned int byte_parse(uint8_t *ptr, size_t num, char *text)
 {
     unsigned int parsed = 0;
     if (ptr && num && text)
@@ -151,7 +135,52 @@ unsigned int u8_parse(uint8_t *ptr, size_t num, char *text)
     return parsed;
 }
 
-void model_load_led(void)
+static uint32_t bkdr(void const *const _str)
+{
+    uint32_t val = 0;
+    if (_str)
+    {
+        for (uint8_t const *str = (uint8_t const *)_str; *str; ++str)
+        {
+            val = val * 131 + tolower(*str);
+        }
+    }
+    return val;
+}
+
+static void model_load_dev(void)
+{
+    char buffer[128];
+    if (model.verbose)
+    {
+        puts("[dev]");
+    }
+    ini_gets("dev", "i2c", MODEL_DEV_I2C, buffer, sizeof(buffer), model.config);
+    if (model.verbose)
+    {
+        printf("i2c=%s\n", buffer);
+    }
+    model.dev.i2c = open(buffer, O_RDWR);
+}
+
+static void model_load_cfg(void)
+{
+    if (model.verbose)
+    {
+        puts("[cfg]");
+    }
+    model.cfg.sleep = (unsigned)ini_getl("cfg", "sleep", MODEL_CFG_SLEEP, model.config);
+    if (model.cfg.sleep < MODEL_CFG_SLEEP)
+    {
+        model.cfg.sleep = MODEL_CFG_SLEEP;
+    }
+    if (model.verbose)
+    {
+        printf("sleep=%i\n", model.cfg.sleep);
+    }
+}
+
+static void model_load_led(void)
 {
     char buffer[128];
     if (model.verbose)
@@ -160,21 +189,21 @@ void model_load_led(void)
     }
 
     ini_gets("led", "rgb1", "", buffer, sizeof(buffer), model.config);
-    u8_parse(model.led.rgb[0], 3, buffer);
+    byte_parse(model.led.rgb[0], 3, buffer);
     if (model.verbose)
     {
         printf("rgb1=0x%02X,0x%02X,0x%02X\n", model.led.rgb[0][0], model.led.rgb[0][1], model.led.rgb[0][2]);
     }
 
     ini_gets("led", "rgb2", "", buffer, sizeof(buffer), model.config);
-    u8_parse(model.led.rgb[1], 3, buffer);
+    byte_parse(model.led.rgb[1], 3, buffer);
     if (model.verbose)
     {
         printf("rgb2=0x%02X,0x%02X,0x%02X\n", model.led.rgb[1][0], model.led.rgb[1][1], model.led.rgb[1][2]);
     }
 
     ini_gets("led", "rgb3", "", buffer, sizeof(buffer), model.config);
-    u8_parse(model.led.rgb[2], 3, buffer);
+    byte_parse(model.led.rgb[2], 3, buffer);
     if (model.verbose)
     {
         printf("rgb3=0x%02X,0x%02X,0x%02X\n", model.led.rgb[2][0], model.led.rgb[2][1], model.led.rgb[2][2]);
@@ -265,7 +294,7 @@ void model_load_led(void)
     }
 }
 
-void model_load_fan(void)
+static void model_load_fan(void)
 {
     uint8_t bound;
     char buffer[128];
@@ -339,18 +368,23 @@ void model_load_fan(void)
 
 void model_load(void)
 {
-    model_load_device();
+    if (model.verbose)
+    {
+        printf("Loaded configuration file: %s\n", model.config);
+    }
+    model_load_dev();
+    model_load_cfg();
     model_load_led();
     model_load_fan();
 }
 
-static unsigned int cpu_get_temp(void)
+static int cpu_get_temp(void)
 {
-    unsigned int temp = 0;
+    int temp = 0;
     int fd = open(MODEL_CPU_TEMP, O_RDONLY);
     if (fd > 0)
     {
-        char buf[8];
+        char buf[16]; /* -40xxx ~ 85xxx */
         if (read(fd, buf, sizeof(buf)) > 0)
         {
             temp = atoi(buf);
@@ -362,9 +396,6 @@ static unsigned int cpu_get_temp(void)
 
 static unsigned int cpu_get_usage(void)
 {
-    static long idle_1 = 0;
-    static long total_1 = 0;
-    static unsigned int usage = 0;
     FILE *f = fopen(MODEL_CPU_USAGE, "r");
     if (f)
     {
@@ -372,20 +403,21 @@ static unsigned int cpu_get_usage(void)
         if (fscanf(f, " %*s%ld%ld%ld%ld%ld%ld%ld", &user, &nice, &sys, &idle, &iowait, &irq, &softirq))
         {
             long total = user + nice + sys + idle + iowait + irq + softirq;
-            usage = (unsigned int)((float)(total - total_1 - (idle - idle_1)) / (total - total_1) * 100);
-            total_1 = total;
-            idle_1 = idle;
-            fclose(f);
+            long delta = total - model.cpu.total;
+            model.cpu.usage = (unsigned int)((float)(delta - (idle - model.cpu.idle)) / delta * 100);
+            model.cpu.total = total;
+            model.cpu.idle = idle;
         }
+        fclose(f);
     }
-    return usage;
+    return model.cpu.usage;
 }
 
 static int get_disk(char *buffer)
 {
     int ok = 0;
     struct statfs info;
-    if (statfs("/", &info) == 0)
+    if (statfs(MODEL_DISK_ROOT, &info) == 0)
     {
         unsigned long long free = info.f_bfree * info.f_bsize;
         unsigned long long total = info.f_blocks * info.f_bsize;
@@ -437,14 +469,20 @@ static int get_ip(char *buffer)
     return ok;
 }
 
-void model_init(void)
+static void model_init(void)
 {
     if (model.dev.i2c < 0)
     {
         fprintf(stderr, "Fail to init I2C!\n");
         exit(EXIT_FAILURE);
     }
-    if (model.write)
+    if (model.get)
+    {
+        i2c_read(model.dev.i2c, MODEL_I2C_ADDR, model.i2c[0], model.i2c + 1, 1);
+        printf("0x%02X\n", model.i2c[1]);
+        exit(EXIT_SUCCESS);
+    }
+    if (model.set)
     {
         i2c_write_8(model.dev.i2c, MODEL_I2C_ADDR, model.i2c[0], model.i2c + 1, 1);
         exit(EXIT_SUCCESS);
@@ -528,22 +566,23 @@ void model_init(void)
     ssd1306_display();
 }
 
-void model_exec(void)
+static void model_exec(void)
 {
     model.cpu.temp = cpu_get_temp();
     unsigned int speed = model.fan.current_speed;
     if (model.fan.mode != BKDR_DIRECT)
     {
-        if (model.cpu.temp > 1000U * model.fan.bound.upper)
+        if (model.cpu.temp > 1000 * model.fan.bound.upper)
         {
             speed = MODEL_FAN_SPEED_MAX;
         }
-        else if (model.cpu.temp > 1000U * model.fan.bound.lower)
+        else if (model.cpu.temp > 1000 * model.fan.bound.lower)
         {
             if (model.fan.mode == BKDR_GRADED)
             {
-                speed = (model.cpu.temp - 1000 * model.fan.bound.lower) * MODEL_FAN_SPEED_MAX /
-                        (model.fan.bound.upper - model.fan.bound.lower);
+                int delta = model.cpu.temp - 1000 * model.fan.bound.lower;
+                int bound = model.fan.bound.upper - model.fan.bound.lower;
+                speed = abs(delta) * MODEL_FAN_SPEED_MAX / bound;
             }
             else
             {
@@ -577,11 +616,17 @@ void model_exec(void)
     }
 }
 
+static void model_idle(void)
+{
+    sleep(model.cfg.sleep);
+}
+
 int main(int argc, char *argv[])
 {
     char const *shortopts = "c:vh";
     struct option const longopts[] = {
-        {"i2c", required_argument, 0, 1},
+        {"get", required_argument, 0, 1},
+        {"set", required_argument, 0, 2},
         {"config", required_argument, 0, 'c'},
         {"verbose", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},
@@ -592,20 +637,26 @@ int main(int argc, char *argv[])
         switch (ok)
         {
         case 1:
-            u8_parse(model.i2c, sizeof(model.i2c), optarg);
-            model.write = !model.write;
+            byte_parse(model.i2c, sizeof(model.i2c), optarg);
+            model.get = true;
+            break;
+        case 2:
+            byte_parse(model.i2c, sizeof(model.i2c), optarg);
+            model.set = true;
             break;
         case 'c':
             model.config = optarg;
             break;
         case 'v':
-            model.verbose = !model.verbose;
+            model.verbose = true;
             break;
         case '?':
             exit(EXIT_SUCCESS);
         case 'h':
         default:
             printf("Usage: %s [options]\nOptions:\n", argv[0]);
+            puts("      --get REG        Get the value of the register");
+            puts("      --set REG,VAL    Set the value of the register");
             puts("  -c, --config FILE    Default configuration file: " MODEL_CONFIG);
             puts("  -v, --verbose        Display detailed log information");
             puts("  -h, --help           Display available options");
@@ -613,13 +664,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (model.verbose)
-    {
-        printf("Loaded configuration file: %s\n", model.config);
-    }
     model_load();
 
-    for (model_init();; sleep(1))
+    for (model_init();; model_idle())
     {
         model_exec();
     }
