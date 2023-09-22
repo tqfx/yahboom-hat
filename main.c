@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 
 #include <fcntl.h>
@@ -401,6 +402,35 @@ static void model_load_oled(void)
 
 void model_load(void)
 {
+    int fd = open("/proc/device-tree/model", O_RDONLY);
+    if (fd > 0)
+    {
+        char buffer[32];
+        if (read(fd, buffer, sizeof(buffer)) < 0)
+        {
+            goto close;
+        }
+        if (strncmp(buffer, "Raspberry Pi 4", sizeof("Raspberry Pi 4") - 1) == 0)
+        {
+            model.fan.bound.lower = 48;
+            goto close;
+        }
+        if (strncmp(buffer, "Raspberry Pi 3", sizeof("Raspberry Pi 3") - 1) == 0)
+        {
+            model.fan.bound.lower = 42;
+            goto close;
+        }
+        if (strncmp(buffer, "Hobot X3 PI", sizeof("Hobot X3 PI") - 1) == 0)
+        {
+            model.fan.bound.lower = 45;
+        }
+    close:
+        if (model.verbose)
+        {
+            printf("Model: %s\n", buffer);
+        }
+        close(fd);
+    }
     if (model.verbose)
     {
         printf("Loaded configuration file: %s\n", model.config);
