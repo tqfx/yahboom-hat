@@ -40,21 +40,16 @@
 #define true !false
 static struct model
 {
-    struct
-    {
-        int i2c;
-    } dev;
+    char const *config;
+#define MODEL_SLEEP_MIN 1
+    unsigned int sleep;
+    int i2cd;
     struct
     {
         int temp;
         long idle, total;
         unsigned int usage;
     } cpu;
-    struct
-    {
-#define MODEL_CFG_SLEEP 1
-        unsigned int sleep;
-    } cfg;
     struct
     {
         uint8_t rgb[3][3];
@@ -94,25 +89,31 @@ static struct model
 #define BKDR_GRADED 0x106F56A9
         uint32_t mode;
     } fan;
-    char const *config;
     uint8_t i2c[3];
     _Bool verbose;
-    _Bool set;
     _Bool get;
+    _Bool set;
 } model = {
-    {0},
-    {0, 0, 0, 0},
-    {MODEL_CFG_SLEEP},
-    {{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}},
-     BKDR_DISABLE,
-     BKDR_MIDDLE,
-     BKDR_GRADED},
-    {{42, 60}, 0, MODEL_FAN_SPEED_MAX, BKDR_SINGLE},
-    MODEL_CONFIG,
-    {0, 0, 0},
-    false,
-    false,
-    false,
+    .config = MODEL_CONFIG,
+    .sleep = MODEL_SLEEP_MIN,
+    .i2cd = 0,
+    .cpu = {.temp = 0, .idle = 0, .total = 0, .usage = 0},
+    .led = {
+        .rgb = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}},
+        .mode = BKDR_DISABLE,
+        .speed = BKDR_MIDDLE,
+        .color = BKDR_GREEN,
+    },
+    .fan = {
+        .bound = {.lower = 42, .upper = 60},
+        .current_speed = ~0,
+        .speed = MODEL_FAN_SPEED_MAX,
+        .mode = BKDR_SINGLE,
+    },
+    .i2c = {0, 0, 0},
+    .verbose = false,
+    .get = false,
+    .set = false,
 };
 
 static unsigned int byte_parse(uint8_t *ptr, size_t num, char *text)
@@ -147,38 +148,6 @@ static uint32_t bkdr(void const *const _str)
         }
     }
     return val;
-}
-
-static void model_load_dev(void)
-{
-    char buffer[128];
-    if (model.verbose)
-    {
-        puts("[dev]");
-    }
-    ini_gets("dev", "i2c", MODEL_DEV_I2C, buffer, sizeof(buffer), model.config);
-    if (model.verbose)
-    {
-        printf("i2c=%s\n", buffer);
-    }
-    model.dev.i2c = open(buffer, O_RDWR);
-}
-
-static void model_load_cfg(void)
-{
-    if (model.verbose)
-    {
-        puts("[cfg]");
-    }
-    model.cfg.sleep = (unsigned)ini_getl("cfg", "sleep", MODEL_CFG_SLEEP, model.config);
-    if (model.cfg.sleep < MODEL_CFG_SLEEP)
-    {
-        model.cfg.sleep = MODEL_CFG_SLEEP;
-    }
-    if (model.verbose)
-    {
-        printf("sleep=%i\n", model.cfg.sleep);
-    }
 }
 
 static void model_load_led(void)
@@ -373,12 +342,29 @@ static void model_load_fan(void)
 
 void model_load(void)
 {
+    char buffer[128];
     if (model.verbose)
     {
         printf("Loaded configuration file: %s\n", model.config);
     }
-    model_load_dev();
-    model_load_cfg();
+
+    ini_gets("", "i2c", MODEL_DEV_I2C, buffer, sizeof(buffer), model.config);
+    if (model.verbose)
+    {
+        printf("i2c=%s\n", buffer);
+    }
+    model.i2cd = open(buffer, O_RDWR);
+
+    model.sleep = (unsigned)ini_getl("", "sleep", MODEL_SLEEP_MIN, model.config);
+    if (model.sleep < MODEL_SLEEP_MIN)
+    {
+        model.sleep = MODEL_SLEEP_MIN;
+    }
+    if (model.verbose)
+    {
+        printf("sleep=%i\n", model.sleep);
+    }
+
     model_load_led();
     model_load_fan();
 }
@@ -476,48 +462,48 @@ static int get_ip(char *buffer)
 
 static void model_init(void)
 {
-    if (model.dev.i2c < 0)
+    if (model.i2cd < 0)
     {
         fprintf(stderr, "Fail to init I2C!\n");
         exit(EXIT_FAILURE);
     }
     if (model.get)
     {
-        i2c_read(model.dev.i2c, model.i2c[0], model.i2c[1], model.i2c + 2);
+        i2c_read(model.i2cd, model.i2c[0], model.i2c[1], model.i2c + 2);
         printf("0x%02X\n", model.i2c[2]);
         exit(EXIT_SUCCESS);
     }
     if (model.set)
     {
-        i2c_write(model.dev.i2c, model.i2c[0], model.i2c[1], model.i2c[2]);
+        i2c_write(model.i2cd, model.i2c[0], model.i2c[1], model.i2c[2]);
         exit(EXIT_SUCCESS);
     }
     for (unsigned int i = 0; i < 3; ++i)
     {
-        rgb_set(model.dev.i2c, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
+        rgb_set(model.i2cd, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
     }
     if (model.led.mode == BKDR_DISABLE)
     {
-        rgb_off(model.dev.i2c);
+        rgb_off(model.i2cd);
     }
     else
     {
         switch (model.led.mode)
         {
         case BKDR_WATER:
-            rgb_effect(model.dev.i2c, 0);
+            rgb_effect(model.i2cd, 0);
             break;
         case BKDR_BREATHING:
-            rgb_effect(model.dev.i2c, 1);
+            rgb_effect(model.i2cd, 1);
             break;
         case BKDR_MARQUEE:
-            rgb_effect(model.dev.i2c, 2);
+            rgb_effect(model.i2cd, 2);
             break;
         case BKDR_RAINBOW:
-            rgb_effect(model.dev.i2c, 3);
+            rgb_effect(model.i2cd, 3);
             break;
         case BKDR_COLORFUL:
-            rgb_effect(model.dev.i2c, 4);
+            rgb_effect(model.i2cd, 4);
             break;
         default:
             break;
@@ -525,45 +511,45 @@ static void model_init(void)
         switch (model.led.speed)
         {
         case BKDR_SLOW:
-            rgb_speed(model.dev.i2c, 1);
+            rgb_speed(model.i2cd, 1);
             break;
         default:
         case BKDR_MIDDLE:
-            rgb_speed(model.dev.i2c, 2);
+            rgb_speed(model.i2cd, 2);
             break;
         case BKDR_FAST:
-            rgb_speed(model.dev.i2c, 3);
+            rgb_speed(model.i2cd, 3);
             break;
         }
         switch (model.led.color)
         {
         case BKDR_RED:
-            rgb_color(model.dev.i2c, 0);
+            rgb_color(model.i2cd, 0);
             break;
         default:
         case BKDR_GREEN:
-            rgb_color(model.dev.i2c, 1);
+            rgb_color(model.i2cd, 1);
             break;
         case BKDR_BLUE:
-            rgb_color(model.dev.i2c, 2);
+            rgb_color(model.i2cd, 2);
             break;
         case BKDR_YELLOW:
-            rgb_color(model.dev.i2c, 3);
+            rgb_color(model.i2cd, 3);
             break;
         case BKDR_PURPLE:
-            rgb_color(model.dev.i2c, 4);
+            rgb_color(model.i2cd, 4);
             break;
         case BKDR_CYAN:
-            rgb_color(model.dev.i2c, 5);
+            rgb_color(model.i2cd, 5);
             break;
         case BKDR_WHITE:
-            rgb_color(model.dev.i2c, 6);
+            rgb_color(model.i2cd, 6);
             break;
         }
     }
-    rgb_fan(model.dev.i2c, model.fan.speed);
+    rgb_fan(model.i2cd, model.fan.speed);
     model.fan.current_speed = model.fan.speed;
-    ssd1306_begin(SSD1306_SWITCHCAPVCC, model.dev.i2c);
+    ssd1306_begin(SSD1306_SWITCHCAPVCC, model.i2cd);
     ssd1306_clearDisplay();
     ssd1306_display();
 }
@@ -599,7 +585,7 @@ static void model_exec(void)
     if (model.fan.current_speed != speed)
     {
         model.fan.current_speed = speed;
-        rgb_fan(model.dev.i2c, speed);
+        rgb_fan(model.i2cd, speed);
     }
     {
         char buffer[64];
@@ -620,7 +606,7 @@ static void model_exec(void)
 
 static void model_idle(void)
 {
-    sleep(model.cfg.sleep);
+    sleep(model.sleep);
 }
 
 int main(int argc, char *argv[])
