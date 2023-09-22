@@ -47,7 +47,7 @@ static struct model
     int i2cd;
     struct
     {
-        int temp;
+        long temp;
         long idle, total;
         unsigned int usage;
     } cpu;
@@ -459,16 +459,16 @@ void model_load(void)
     model_load_oled();
 }
 
-static int cpu_get_temp(void)
+static long cpu_get_temp(void)
 {
-    int temp = 0;
+    long temp = 0;
     int fd = open(MODEL_CPU_TEMP, O_RDONLY);
     if (fd > 0)
     {
         char buf[16]; /* -40xxx ~ 85xxx */
         if (read(fd, buf, sizeof(buf)) > 0)
         {
-            temp = atoi(buf);
+            temp = atol(buf);
         }
         close(fd);
     }
