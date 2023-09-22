@@ -334,9 +334,8 @@ void ssd1306_invertDisplay(unsigned int i)
     }
 }
 
-void ssd1306_command(unsigned char c)
+void ssd1306_command(unsigned char c) // I2C
 {
-    // I2C
     unsigned char control = 0x00; // Co = 0, D/C = 0
     i2c_write(i2cd, SSD1306_I2C_ADDRESS, control, c);
 }
@@ -396,7 +395,7 @@ void ssd1306_display(void)
 // startscrollright
 // Activate a right handed scroll for rows start through stop
 // Hint, the display is 16 rows tall. To scroll the whole display, run:
-// ssd1306_scrollright(0x00, 0x0F)
+// ssd1306_startscrollright(0x00, 0x0F)
 void ssd1306_startscrollright(unsigned int start, unsigned int stop)
 {
     ssd1306_command(SSD1306_RIGHT_HORIZONTAL_SCROLL);
@@ -412,7 +411,7 @@ void ssd1306_startscrollright(unsigned int start, unsigned int stop)
 // startscrollleft
 // Activate a right handed scroll for rows start through stop
 // Hint, the display is 16 rows tall. To scroll the whole display, run:
-// ssd1306_scrollright(0x00, 0x0F)
+// ssd1306_startscrollleft(0x00, 0x0F)
 void ssd1306_startscrollleft(unsigned int start, unsigned int stop)
 {
     ssd1306_command(SSD1306_LEFT_HORIZONTAL_SCROLL);
@@ -428,7 +427,7 @@ void ssd1306_startscrollleft(unsigned int start, unsigned int stop)
 // startscrolldiagright
 // Activate a diagonal scroll for rows start through stop
 // Hint, the display is 16 rows tall. To scroll the whole display, run:
-// ssd1306_scrollright(0x00, 0x0F)
+// ssd1306_startscrolldiagright(0x00, 0x0F)
 void ssd1306_startscrolldiagright(unsigned int start, unsigned int stop)
 {
     ssd1306_command(SSD1306_SET_VERTICAL_SCROLL_AREA);
@@ -446,7 +445,7 @@ void ssd1306_startscrolldiagright(unsigned int start, unsigned int stop)
 // startscrolldiagleft
 // Activate a diagonal scroll for rows start through stop
 // Hint, the display is 16 rows tall. To scroll the whole display, run:
-// ssd1306_scrollright(0x00, 0x0F)
+// ssd1306_startscrolldiagleft(0x00, 0x0F)
 void ssd1306_startscrolldiagleft(unsigned int start, unsigned int stop)
 {
     ssd1306_command(SSD1306_SET_VERTICAL_SCROLL_AREA);

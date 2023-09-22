@@ -89,6 +89,16 @@ static struct model
 #define BKDR_GRADED 0x106F56A9
         uint32_t mode;
     } fan;
+    struct
+    {
+#define BKDR_STOP 0x0F8775F2
+#define BKDR_LEFT 0x0E936497
+#define BKDR_RIGHT 0xDF4832F0
+#define BKDR_DIAGLEFT 0x2CB9460E
+#define BKDR_DIAGRIGHT 0x4CAA92D5
+        uint32_t scroll;
+        unsigned int dimmed;
+    } oled;
     uint8_t i2c[3];
     _Bool verbose;
     _Bool get;
@@ -109,6 +119,10 @@ static struct model
         .current_speed = ~0,
         .speed = MODEL_FAN_SPEED_MAX,
         .mode = BKDR_SINGLE,
+    },
+    .oled = {
+        .scroll = BKDR_STOP,
+        .dimmed = false,
     },
     .i2c = {0, 0, 0},
     .verbose = false,
@@ -152,34 +166,35 @@ static uint32_t bkdr(void const *const _str)
 
 static void model_load_led(void)
 {
-    char buffer[128];
+    char const *const section = "led";
     if (model.verbose)
     {
-        puts("[led]");
+        printf("[%s]\n", section);
     }
 
-    ini_gets("led", "rgb1", "", buffer, sizeof(buffer), model.config);
+    char buffer[128];
+    ini_gets(section, "rgb1", "", buffer, sizeof(buffer), model.config);
     byte_parse(model.led.rgb[0], 3, buffer);
     if (model.verbose)
     {
         printf("rgb1=0x%02X,0x%02X,0x%02X\n", model.led.rgb[0][0], model.led.rgb[0][1], model.led.rgb[0][2]);
     }
 
-    ini_gets("led", "rgb2", "", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "rgb2", "", buffer, sizeof(buffer), model.config);
     byte_parse(model.led.rgb[1], 3, buffer);
     if (model.verbose)
     {
         printf("rgb2=0x%02X,0x%02X,0x%02X\n", model.led.rgb[1][0], model.led.rgb[1][1], model.led.rgb[1][2]);
     }
 
-    ini_gets("led", "rgb3", "", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "rgb3", "", buffer, sizeof(buffer), model.config);
     byte_parse(model.led.rgb[2], 3, buffer);
     if (model.verbose)
     {
         printf("rgb3=0x%02X,0x%02X,0x%02X\n", model.led.rgb[2][0], model.led.rgb[2][1], model.led.rgb[2][2]);
     }
 
-    ini_gets("led", "mode", "disable", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "mode", "disable", buffer, sizeof(buffer), model.config);
     model.led.mode = bkdr(buffer);
     if (model.verbose)
     {
@@ -209,7 +224,7 @@ static void model_load_led(void)
         printf("mode=%s\n", mode);
     }
 
-    ini_gets("led", "speed", "middle", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "speed", "middle", buffer, sizeof(buffer), model.config);
     model.led.speed = bkdr(buffer);
     if (model.verbose)
     {
@@ -230,7 +245,7 @@ static void model_load_led(void)
         printf("speed=%s\n", speed);
     }
 
-    ini_gets("led", "color", "green", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "color", "green", buffer, sizeof(buffer), model.config);
     model.led.color = bkdr(buffer);
     if (model.verbose)
     {
@@ -266,13 +281,14 @@ static void model_load_led(void)
 
 static void model_load_fan(void)
 {
-    char buffer[128];
+    char const *const section = "fan";
     if (model.verbose)
     {
-        puts("[fan]");
+        printf("[%s]\n", section);
     }
 
-    ini_gets("fan", "mode", "single", buffer, sizeof(buffer), model.config);
+    char buffer[128];
+    ini_gets(section, "mode", "single", buffer, sizeof(buffer), model.config);
     model.fan.mode = bkdr(buffer);
     if (model.verbose)
     {
@@ -295,7 +311,7 @@ static void model_load_fan(void)
 
     uint8_t bound;
     char *endptr = buffer;
-    ini_gets("fan", "bound", "", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "bound", "", buffer, sizeof(buffer), model.config);
     while (*endptr && !isdigit(*endptr))
     {
         ++endptr;
@@ -329,7 +345,7 @@ static void model_load_fan(void)
         printf("bound=%u,%u\n", model.fan.bound.lower, model.fan.bound.upper);
     }
 
-    model.fan.speed = (uint8_t)ini_getl("fan", "speed", 9, model.config);
+    model.fan.speed = (uint8_t)ini_getl(section, "speed", 9, model.config);
     if (model.fan.speed > MODEL_FAN_SPEED_MAX)
     {
         model.fan.speed = MODEL_FAN_SPEED_MAX;
@@ -340,14 +356,57 @@ static void model_load_fan(void)
     }
 }
 
+static void model_load_oled(void)
+{
+    char const *const section = "oled";
+    if (model.verbose)
+    {
+        printf("[%s]\n", section);
+    }
+
+    char buffer[128];
+    ini_gets(section, "scroll", "stop", buffer, sizeof(buffer), model.config);
+    model.oled.scroll = bkdr(buffer);
+    if (model.verbose)
+    {
+        char const *scroll;
+        switch (model.oled.scroll)
+        {
+        default:
+        case BKDR_STOP:
+            scroll = "stop";
+            break;
+        case BKDR_LEFT:
+            scroll = "left";
+            break;
+        case BKDR_RIGHT:
+            scroll = "right";
+            break;
+        case BKDR_DIAGLEFT:
+            scroll = "diagleft";
+            break;
+        case BKDR_DIAGRIGHT:
+            scroll = "diagright";
+            break;
+        }
+        printf("scroll=%s\n", scroll);
+    }
+
+    model.oled.dimmed = ini_getbool(section, "dimmed", false, model.config);
+    if (model.verbose)
+    {
+        printf("dimmed=%u\n", model.oled.dimmed);
+    }
+}
+
 void model_load(void)
 {
-    char buffer[128];
     if (model.verbose)
     {
         printf("Loaded configuration file: %s\n", model.config);
     }
 
+    char buffer[128];
     ini_gets("", "i2c", MODEL_DEV_I2C, buffer, sizeof(buffer), model.config);
     if (model.verbose)
     {
@@ -367,6 +426,7 @@ void model_load(void)
 
     model_load_led();
     model_load_fan();
+    model_load_oled();
 }
 
 static int cpu_get_temp(void)
@@ -550,6 +610,29 @@ static void model_init(void)
     rgb_fan(model.i2cd, model.fan.speed);
     model.fan.current_speed = model.fan.speed;
     ssd1306_begin(SSD1306_SWITCHCAPVCC, model.i2cd);
+    switch (model.oled.scroll)
+    {
+    default:
+    case BKDR_STOP:
+        ssd1306_stopscroll();
+        break;
+    case BKDR_LEFT:
+        ssd1306_startscrollleft(0x0, 0xF);
+        break;
+    case BKDR_RIGHT:
+        ssd1306_startscrollright(0x0, 0xF);
+        break;
+    case BKDR_DIAGLEFT:
+        ssd1306_startscrolldiagleft(0x0, 0xF);
+        break;
+    case BKDR_DIAGRIGHT:
+        ssd1306_startscrolldiagright(0x0, 0xF);
+        break;
+    }
+    if (model.oled.dimmed)
+    {
+        ssd1306_dim(model.oled.dimmed);
+    }
     ssd1306_clearDisplay();
     ssd1306_display();
 }
