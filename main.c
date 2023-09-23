@@ -453,7 +453,9 @@ void model_load(void)
     {
         printf("i2c=%s\n", buffer);
     }
-    model.i2cd = open(buffer, O_RDWR);
+    extern int i2cd;
+    i2cd = open(buffer, O_RDWR);
+    model.i2cd = i2cd;
 
     model.sleep = (unsigned)ini_getl("", "sleep", MODEL_SLEEP_MIN, model.config);
     if (model.sleep < MODEL_SLEEP_MIN)
@@ -584,7 +586,48 @@ static void model_init(void)
     {
         rgb_set(model.i2cd, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
     }
-    if (model.led.mode != BKDR_DISABLE)
+    model.fan.current_speed = model.fan.speed;
+    rgb_fan(model.i2cd, model.fan.speed);
+    ssd1306_begin(SSD1306_SWITCHCAPVCC);
+    switch (model.oled.scroll)
+    {
+    default:
+    case BKDR_STOP:
+        ssd1306_stopscroll();
+        break;
+    case BKDR_LEFT:
+        ssd1306_startscrollleft(0x0, 0xF);
+        break;
+    case BKDR_RIGHT:
+        ssd1306_startscrollright(0x0, 0xF);
+        break;
+    case BKDR_DIAGLEFT:
+        ssd1306_startscrolldiagleft(0x0, 0xF);
+        break;
+    case BKDR_DIAGRIGHT:
+        ssd1306_startscrolldiagright(0x0, 0xF);
+        break;
+    }
+    if (model.oled.invert)
+    {
+        ssd1306_invertDisplay(model.oled.invert);
+    }
+    if (model.oled.dimmed)
+    {
+        ssd1306_dim(model.oled.dimmed);
+    }
+    ssd1306_clearDisplay();
+    ssd1306_display();
+}
+
+static void model_exec(void)
+{
+    model.cpu.temp = cpu_get_temp();
+    if (model.led.mode == BKDR_DISABLE)
+    {
+        rgb_off(model.i2cd);
+    }
+    else
     {
         switch (model.led.mode)
         {
@@ -645,52 +688,12 @@ static void model_init(void)
             break;
         }
     }
-    rgb_fan(model.i2cd, model.fan.speed);
-    model.fan.current_speed = model.fan.speed;
-    ssd1306_begin(SSD1306_SWITCHCAPVCC, model.i2cd);
-    switch (model.oled.scroll)
-    {
-    default:
-    case BKDR_STOP:
-        ssd1306_stopscroll();
-        break;
-    case BKDR_LEFT:
-        ssd1306_startscrollleft(0x0, 0xF);
-        break;
-    case BKDR_RIGHT:
-        ssd1306_startscrollright(0x0, 0xF);
-        break;
-    case BKDR_DIAGLEFT:
-        ssd1306_startscrolldiagleft(0x0, 0xF);
-        break;
-    case BKDR_DIAGRIGHT:
-        ssd1306_startscrolldiagright(0x0, 0xF);
-        break;
-    }
-    if (model.oled.invert)
-    {
-        ssd1306_invertDisplay(model.oled.invert);
-    }
-    if (model.oled.dimmed)
-    {
-        ssd1306_dim(model.oled.dimmed);
-    }
-    ssd1306_clearDisplay();
-    ssd1306_display();
-}
-
-static void model_exec(void)
-{
-    model.cpu.temp = cpu_get_temp();
-    if (model.led.mode == BKDR_DISABLE)
-    {
-        rgb_off(model.i2cd);
-    }
+    unsigned char speed = model.fan.current_speed;
     if (model.fan.mode != BKDR_DIRECT)
     {
         if (model.cpu.temp > 1000 * model.fan.bound.upper)
         {
-            model.fan.current_speed = MODEL_FAN_SPEED_MAX;
+            speed = MODEL_FAN_SPEED_MAX;
         }
         else if (model.cpu.temp > 1000 * model.fan.bound.lower)
         {
@@ -698,19 +701,22 @@ static void model_exec(void)
             {
                 int delta = model.cpu.temp - 1000 * model.fan.bound.lower;
                 int bound = model.fan.bound.upper - model.fan.bound.lower;
-                model.fan.current_speed = abs(delta) * MODEL_FAN_SPEED_MAX / bound;
+                speed = abs(delta) * MODEL_FAN_SPEED_MAX / bound;
             }
             else
             {
-                model.fan.current_speed = model.fan.speed;
+                speed = model.fan.speed;
             }
         }
         else
         {
-            model.fan.current_speed = 0;
+            speed = 0;
         }
     }
-    rgb_fan(model.i2cd, model.fan.current_speed);
+    if (speed > 0 || speed != model.fan.current_speed)
+    {
+        rgb_fan(model.i2cd, speed);
+    }
     {
         char buffer[64];
         ssd1306_clearDisplay();

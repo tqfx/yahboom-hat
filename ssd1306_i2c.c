@@ -239,11 +239,10 @@ void ssd1306_drawPixel(int x, int y, unsigned int color)
 }
 
 // Init SSD1306
-void ssd1306_begin(unsigned int vccstate, int fd)
+void ssd1306_begin(unsigned int vccstate)
 {
     // I2C Init
     _vccstate = vccstate;
-    i2cd = fd;
 
     // Init sequence
     ssd1306_command(SSD1306_DISPLAYOFF); // 0xAE
@@ -364,20 +363,23 @@ void ssd1306_display(void)
 #endif
 
     // I2C
-    unsigned char header = buffer[0];
-    i2c_write(i2cd, SSD1306_I2C_ADDRESS, 0x40, header);
-    buffer[0] = 0x40;
-    struct i2c_msg messages;
-    struct i2c_rdwr_ioctl_data data;
-    messages.addr = SSD1306_I2C_ADDRESS;
-    messages.flags = 0;
-    messages.len = sizeof(buffer);
-    messages.buf = buffer;
-    data.msgs = &messages;
-    data.nmsgs = 1;
-    ioctl(i2cd, I2C_RDWR, &data);
-    usleep(1000);
-    buffer[0] = header;
+    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i += WIDTH)
+    {
+        struct i2c_msg messages;
+        struct i2c_rdwr_ioctl_data data;
+        unsigned char msg_buf[WIDTH + 1] = {0x40};
+        memcpy(msg_buf + 1, buffer + i, WIDTH);
+
+        messages.addr = SSD1306_I2C_ADDRESS;
+        messages.flags = 0;
+        messages.len = sizeof(msg_buf);
+        messages.buf = msg_buf;
+        data.msgs = &messages;
+        data.nmsgs = 1;
+
+        ioctl(i2cd, I2C_RDWR, &data);
+        usleep(WIDTH * 100);
+    }
 }
 
 // startscrollright
