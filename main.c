@@ -584,11 +584,7 @@ static void model_init(void)
     {
         rgb_set(model.i2cd, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
     }
-    if (model.led.mode == BKDR_DISABLE)
-    {
-        rgb_off(model.i2cd);
-    }
-    else
+    if (model.led.mode != BKDR_DISABLE)
     {
         switch (model.led.mode)
         {
@@ -686,6 +682,10 @@ static void model_init(void)
 static void model_exec(void)
 {
     model.cpu.temp = cpu_get_temp();
+    if (model.led.mode == BKDR_DISABLE)
+    {
+        rgb_off(model.i2cd);
+    }
     if (model.fan.mode != BKDR_DIRECT)
     {
         if (model.cpu.temp > 1000 * model.fan.bound.upper)
