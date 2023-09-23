@@ -1,5 +1,5 @@
 /*
- Raspberry Pi RGB Cooling HAT with adjustable fan and OLED display for 4B/3B+/3B
+ Software for RGB Cooling HAT with adjustable fan and OLED display
 
  Copyright (C) 2023 tqfx <tqfx@foxmail.com>
 
