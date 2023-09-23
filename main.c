@@ -475,7 +475,7 @@ void model_load(void)
     int fd = open("/proc/device-tree/model", O_RDONLY);
     if (fd > 0)
     {
-        char buffer[32];
+        char buffer[64];
         if (read(fd, buffer, sizeof(buffer)) < 0)
         {
             goto close;

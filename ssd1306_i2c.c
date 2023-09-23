@@ -363,12 +363,12 @@ void ssd1306_display(void)
 #endif
 
     // I2C
-    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i += WIDTH)
+    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i += 8)
     {
         struct i2c_msg messages;
         struct i2c_rdwr_ioctl_data data;
-        unsigned char msg_buf[WIDTH + 1] = {0x40};
-        memcpy(msg_buf + 1, buffer + i, WIDTH);
+        unsigned char msg_buf[1 + 8] = {0x40};
+        memcpy(msg_buf + 1, buffer + i, 8);
 
         messages.addr = SSD1306_I2C_ADDRESS;
         messages.flags = 0;
@@ -378,7 +378,7 @@ void ssd1306_display(void)
         data.nmsgs = 1;
 
         ioctl(i2cd, I2C_RDWR, &data);
-        usleep(WIDTH * 100);
+        usleep(1000);
     }
 }
 
