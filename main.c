@@ -27,6 +27,9 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/sysinfo.h>
+#include <linux/i2c-dev.h>
+#include <linux/i2c.h>
+#include <sys/ioctl.h>
 #include <sys/vfs.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -98,7 +101,8 @@ static struct model
 #define BKDR_DIAGLEFT 0x2CB9460E
 #define BKDR_DIAGRIGHT 0x4CAA92D5
         uint32_t scroll;
-        unsigned int dimmed;
+        _Bool invert;
+        _Bool dimmed;
     } oled;
     uint8_t i2c[3];
     _Bool verbose;
@@ -117,12 +121,13 @@ static struct model
     },
     .fan = {
         .bound = {.lower = 42, .upper = 60},
-        .current_speed = ~0,
+        .current_speed = 0,
         .speed = MODEL_FAN_SPEED_MAX,
         .mode = BKDR_SINGLE,
     },
     .oled = {
         .scroll = BKDR_STOP,
+        .invert = false,
         .dimmed = false,
     },
     .i2c = {0, 0, 0},
@@ -393,7 +398,13 @@ static void model_load_oled(void)
         printf("scroll=%s\n", scroll);
     }
 
-    model.oled.dimmed = ini_getbool(section, "dimmed", false, model.config);
+    model.oled.invert = (_Bool)ini_getbool(section, "invert", false, model.config);
+    if (model.verbose)
+    {
+        printf("invert=%u\n", model.oled.invert);
+    }
+
+    model.oled.dimmed = (_Bool)ini_getbool(section, "dimmed", false, model.config);
     if (model.verbose)
     {
         printf("dimmed=%u\n", model.oled.dimmed);
@@ -557,6 +568,7 @@ static void model_init(void)
         fprintf(stderr, "Fail to init I2C!\n");
         exit(EXIT_FAILURE);
     }
+    ioctl(model.i2cd, I2C_RETRIES, 5);
     if (model.get)
     {
         i2c_read(model.i2cd, model.i2c[0], model.i2c[1], model.i2c + 2);
@@ -659,6 +671,10 @@ static void model_init(void)
         ssd1306_startscrolldiagright(0x0, 0xF);
         break;
     }
+    if (model.oled.invert)
+    {
+        ssd1306_invertDisplay(model.oled.invert);
+    }
     if (model.oled.dimmed)
     {
         ssd1306_dim(model.oled.dimmed);
@@ -670,12 +686,11 @@ static void model_init(void)
 static void model_exec(void)
 {
     model.cpu.temp = cpu_get_temp();
-    unsigned int speed = model.fan.current_speed;
     if (model.fan.mode != BKDR_DIRECT)
     {
         if (model.cpu.temp > 1000 * model.fan.bound.upper)
         {
-            speed = MODEL_FAN_SPEED_MAX;
+            model.fan.current_speed = MODEL_FAN_SPEED_MAX;
         }
         else if (model.cpu.temp > 1000 * model.fan.bound.lower)
         {
@@ -683,23 +698,19 @@ static void model_exec(void)
             {
                 int delta = model.cpu.temp - 1000 * model.fan.bound.lower;
                 int bound = model.fan.bound.upper - model.fan.bound.lower;
-                speed = abs(delta) * MODEL_FAN_SPEED_MAX / bound;
+                model.fan.current_speed = abs(delta) * MODEL_FAN_SPEED_MAX / bound;
             }
             else
             {
-                speed = model.fan.speed;
+                model.fan.current_speed = model.fan.speed;
             }
         }
         else
         {
-            speed = 0;
+            model.fan.current_speed = 0;
         }
     }
-    if (model.fan.current_speed != speed)
-    {
-        model.fan.current_speed = speed;
-        rgb_fan(model.i2cd, speed);
-    }
+    rgb_fan(model.i2cd, model.fan.current_speed);
     {
         char buffer[64];
         ssd1306_clearDisplay();

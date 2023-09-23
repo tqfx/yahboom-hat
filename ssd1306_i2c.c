@@ -45,7 +45,7 @@ int cursor_y = 0;
 int cursor_x = 0;
 
 // the memory buffer for the LCD. Displays Adafruit logo
-int buffer[SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8] = {
+unsigned char buffer[SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8] = {
     // clang-format off
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -364,32 +364,20 @@ void ssd1306_display(void)
 #endif
 
     // I2C
-    int *buffer_p = buffer;
-    unsigned char msg_buf[1 + 64] = {0x40};
-    for (int i = 0; i < (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8); i += 64)
-    {
-        struct i2c_msg messages;
-        struct i2c_rdwr_ioctl_data data;
-
-        for (unsigned char *p = msg_buf + 1, *q = p + 64; p < q;)
-        {
-            *p++ = *buffer_p++;
-        }
-
-        messages.addr = SSD1306_I2C_ADDRESS;
-        messages.flags = 0;
-        messages.len = sizeof(msg_buf);
-        messages.buf = msg_buf;
-
-        data.msgs = &messages;
-        data.nmsgs = 1;
-
-        for (int try = 0; ioctl(i2cd, I2C_RDWR, &data) < 0 && try < 3; ++try)
-        {
-        }
-
-        usleep(1000);
-    }
+    unsigned char header = buffer[0];
+    i2c_write(i2cd, SSD1306_I2C_ADDRESS, 0x40, header);
+    buffer[0] = 0x40;
+    struct i2c_msg messages;
+    struct i2c_rdwr_ioctl_data data;
+    messages.addr = SSD1306_I2C_ADDRESS;
+    messages.flags = 0;
+    messages.len = sizeof(buffer);
+    messages.buf = buffer;
+    data.msgs = &messages;
+    data.nmsgs = 1;
+    ioctl(i2cd, I2C_RDWR, &data);
+    usleep(1000);
+    buffer[0] = header;
 }
 
 // startscrollright
@@ -493,7 +481,7 @@ void ssd1306_dim(unsigned int dim)
 // clear everything
 void ssd1306_clearDisplay(void)
 {
-    memset(buffer, 0, (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8) * sizeof(int));
+    memset(buffer, 0, (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8) * sizeof(*buffer));
     cursor_y = 0;
     cursor_x = 0;
 }
@@ -522,13 +510,13 @@ void ssd1306_drawFastHLineInternal(int x, int y, int w, unsigned int color)
         return;
     }
     // set up the pointer for movement through the buffer
-    unsigned int *pBuf = (unsigned int *)buffer;
+    unsigned char *pBuf = (unsigned char *)buffer;
     // adjust the buffer pointer for the current row
     pBuf += ((y / 8) * SSD1306_LCDWIDTH);
     // and offset x columns in
     pBuf += x;
 
-    unsigned int mask = 1 << (y & 7);
+    unsigned char mask = 1 << (y & 7);
 
     switch (color)
     {
@@ -587,7 +575,7 @@ void ssd1306_drawFastVLineInternal(int x, int __y, int __h, unsigned int color)
     unsigned int h = __h;
 
     // set up the pointer for fast movement through the buffer
-    unsigned int *pBuf = (unsigned int *)buffer;
+    unsigned char *pBuf = (unsigned char *)buffer;
     // adjust the buffer pointer for the current row
     pBuf += ((y / 8) * SSD1306_LCDWIDTH);
     // and offset x columns in
@@ -595,7 +583,7 @@ void ssd1306_drawFastVLineInternal(int x, int __y, int __h, unsigned int color)
 
     // do the first partial byte, if necessary - this requires some
     // masking
-    unsigned int mod = (y & 7);
+    unsigned char mod = (y & 7);
     if (mod)
     {
         // mask off the high n bits we want to set

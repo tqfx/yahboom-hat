@@ -52,6 +52,6 @@ int i2c_read(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned ch
         return ~0;
     }
 
-    usleep(100);
+    usleep(1000);
     return 0;
 }
