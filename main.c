@@ -191,7 +191,7 @@ static void model_load_led(void)
     char const *const section = "led";
     if (hat.verbose)
     {
-        printf("[%s]\n", section);
+        printf("  [%s]\n", section);
     }
 
     char buffer[128];
@@ -199,21 +199,21 @@ static void model_load_led(void)
     byte_parse(hat.led.rgb[0], 3, buffer);
     if (hat.verbose)
     {
-        printf("rgb1=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[0][0], hat.led.rgb[0][1], hat.led.rgb[0][2]);
+        printf("  rgb1=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[0][0], hat.led.rgb[0][1], hat.led.rgb[0][2]);
     }
 
     ini_gets(section, "rgb2", "", buffer, sizeof(buffer), hat.config);
     byte_parse(hat.led.rgb[1], 3, buffer);
     if (hat.verbose)
     {
-        printf("rgb2=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[1][0], hat.led.rgb[1][1], hat.led.rgb[1][2]);
+        printf("  rgb2=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[1][0], hat.led.rgb[1][1], hat.led.rgb[1][2]);
     }
 
     ini_gets(section, "rgb3", "", buffer, sizeof(buffer), hat.config);
     byte_parse(hat.led.rgb[2], 3, buffer);
     if (hat.verbose)
     {
-        printf("rgb3=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[2][0], hat.led.rgb[2][1], hat.led.rgb[2][2]);
+        printf("  rgb3=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[2][0], hat.led.rgb[2][1], hat.led.rgb[2][2]);
     }
 
     char const *mode;
@@ -253,7 +253,7 @@ static void model_load_led(void)
     }
     if (hat.verbose)
     {
-        printf("mode=%s\n", mode);
+        printf("  mode=%s\n", mode);
     }
 
     char const *speed;
@@ -278,7 +278,7 @@ static void model_load_led(void)
     }
     if (hat.verbose)
     {
-        printf("speed=%s\n", speed);
+        printf("  speed=%s\n", speed);
     }
 
     char const *color;
@@ -323,7 +323,7 @@ static void model_load_led(void)
     }
     if (hat.verbose)
     {
-        printf("color=%s\n", color);
+        printf("  color=%s\n", color);
     }
 }
 
@@ -332,7 +332,7 @@ static void model_load_fan(void)
     char const *const section = "fan";
     if (hat.verbose)
     {
-        printf("[%s]\n", section);
+        printf("  [%s]\n", section);
     }
 
     char buffer[128];
@@ -358,7 +358,7 @@ static void model_load_fan(void)
     }
     if (hat.verbose)
     {
-        printf("mode=%s\n", mode);
+        printf("  mode=%s\n", mode);
     }
 
     uint8_t bound;
@@ -394,7 +394,7 @@ static void model_load_fan(void)
     }
     if (hat.verbose)
     {
-        printf("bound=%u,%u\n", hat.fan.bound.lower, hat.fan.bound.upper);
+        printf("  bound=%u,%u\n", hat.fan.bound.lower, hat.fan.bound.upper);
     }
 
     hat.fan.speed = (uint8_t)ini_getl(section, "speed", HAT_FAN_SPEED_MAX, hat.config);
@@ -404,7 +404,7 @@ static void model_load_fan(void)
     }
     if (hat.verbose)
     {
-        printf("speed=%u\n", hat.fan.speed);
+        printf("  speed=%u\n", hat.fan.speed);
     }
 }
 
@@ -413,7 +413,7 @@ static void model_load_oled(void)
     char const *const section = "oled";
     if (hat.verbose)
     {
-        printf("[%s]\n", section);
+        printf("  [%s]\n", section);
     }
 
     char buffer[128];
@@ -449,24 +449,29 @@ static void model_load_oled(void)
     }
     if (hat.verbose)
     {
-        printf("scroll=%s\n", scroll);
+        printf("  scroll=%s\n", scroll);
     }
 
     hat.oled.invert = (_Bool)ini_getbool(section, "invert", false, hat.config);
     if (hat.verbose)
     {
-        printf("invert=%u\n", hat.oled.invert);
+        printf("  invert=%u\n", hat.oled.invert);
     }
 
     hat.oled.dimmed = (_Bool)ini_getbool(section, "dimmed", false, hat.config);
     if (hat.verbose)
     {
-        printf("dimmed=%u\n", hat.oled.dimmed);
+        printf("  dimmed=%u\n", hat.oled.dimmed);
     }
 }
 
 void model_load(void)
 {
+    if (hat.verbose)
+    {
+        printf("Config: %s\n", hat.config);
+    }
+
     int fd = open("/proc/device-tree/model", O_RDONLY);
     if (fd > 0)
     {
@@ -496,16 +501,13 @@ void model_load(void)
         }
         close(fd);
     }
-    if (hat.verbose)
-    {
-        printf("Loaded configuration file: %s\n", hat.config);
-    }
 
+    putchar('\n');
     char buffer[128];
     ini_gets("", "i2c", HAT_DEV_I2C, buffer, sizeof(buffer), hat.config);
     if (hat.verbose)
     {
-        printf("i2c=%s\n", buffer);
+        printf("  i2c=%s\n", buffer);
     }
     extern int i2cd;
     i2cd = open(buffer, O_RDWR);
@@ -518,12 +520,13 @@ void model_load(void)
     }
     if (hat.verbose)
     {
-        printf("sleep=%i\n", hat.sleep);
+        printf("  sleep=%i\n", hat.sleep);
     }
 
     model_load_led();
     model_load_fan();
     model_load_oled();
+    putchar('\n');
 }
 
 static long cpu_get_temp(void)
