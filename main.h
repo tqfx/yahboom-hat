@@ -19,12 +19,12 @@
 #ifndef YAHBOOM_MAIN_H
 #define YAHBOOM_MAIN_H
 
-#define MODEL_I2C_ADDR 0x0D
-#define MODEL_CONFIG "yahboom-hat.ini"
-#define MODEL_DEV_I2C "/dev/i2c-0"
-#define MODEL_CPU_TEMP "/sys/class/thermal/thermal_zone0/temp"
-#define MODEL_CPU_USAGE "/proc/stat"
-#define MODEL_DISK_ROOT "/"
+#define HAT_I2C_ADDR 0x0D
+#define HAT_CONFIG "yahboom-hat.ini"
+#define HAT_DEV_I2C "/dev/i2c-0"
+#define HAT_CPU_TEMP "/sys/class/thermal/thermal_zone0/temp"
+#define HAT_CPU_USAGE "/proc/stat"
+#define HAT_DISK_ROOT "/"
 
 #if defined(__cplusplus)
 extern "C" {

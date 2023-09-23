@@ -40,12 +40,52 @@
 #include "i2c.h"
 #include "rgb.h"
 
+enum led_mode
+{
+    LED_MODE_WATER,
+    LED_MODE_BREATHING,
+    LED_MODE_MARQUEE,
+    LED_MODE_RAINBOW,
+    LED_MODE_COLORFUL,
+    LED_MODE_DISABLE
+};
+enum led_speed
+{
+    LED_SPEED_SLOW = 1,
+    LED_SPEED_MIDDLE,
+    LED_SPEED_FAST
+};
+enum led_color
+{
+    LED_COLOR_RED,
+    LED_COLOR_GREEN,
+    LED_COLOR_BLUE,
+    LED_COLOR_YELLOW,
+    LED_COLOR_PURPLE,
+    LED_COLOR_CYAN,
+    LED_COLOR_WHITE
+};
+enum fan_mode
+{
+    FAN_MODE_DIRECT,
+    FAN_MODE_SIGNLE,
+    FAN_MODE_GRADED
+};
+enum oled_scroll
+{
+    OLED_SCROLL_STOP,
+    OLED_SCROLL_LEFT,
+    OLED_SCROLL_RIGHT,
+    OLED_SCROLL_DIAGLEFT,
+    OLED_SCROLL_DIAGRIGHT
+};
+
 #define false 0
 #define true !false
 static struct model
 {
     char const *config;
-#define MODEL_SLEEP_MIN 1
+#define HAT_SLEEP_MIN 1
     unsigned int sleep;
     int i2cd;
     struct
@@ -57,50 +97,26 @@ static struct model
     struct
     {
         uint8_t rgb[3][3];
-#define BKDR_DISABLE 0xAECA0228
-#define BKDR_WATER 0x35FDBB97
-#define BKDR_BREATHING 0x5DC61AC6
-#define BKDR_MARQUEE 0x1D8B3AA6
-#define BKDR_RAINBOW 0x06A0FFBE
-#define BKDR_COLORFUL 0x4D6E39E2
-        uint32_t mode;
-#define BKDR_SLOW 0x0F855DB1
-#define BKDR_MIDDLE 0x57F49EE9
-#define BKDR_FAST 0x0DC48D78
-        uint32_t speed;
-#define BKDR_RED 0x001E0E15
-#define BKDR_GREEN 0x1F659047
-#define BKDR_BLUE 0x0D3E3966
-#define BKDR_YELLOW 0xDD05D5C4
-#define BKDR_PURPLE 0x1F096FF4
-#define BKDR_CYAN 0x0D63E443
-#define BKDR_WHITE 0x36EB0111
-        uint32_t color;
+        enum led_mode mode;
+        enum led_speed speed;
+        enum led_color color;
     } led;
     struct
     {
+#define HAT_FAN_BOUND_MAX 65
         struct
         {
             uint8_t lower;
             uint8_t upper;
-#define MODEL_FAN_BOUND_MAX 65
         } bound;
-#define MODEL_FAN_SPEED_MAX 9
+#define HAT_FAN_SPEED_MAX 9
         uint8_t current_speed;
         uint8_t speed;
-#define BKDR_DIRECT 0x822E74D5
-#define BKDR_SINGLE 0x3E6634C4
-#define BKDR_GRADED 0x106F56A9
-        uint32_t mode;
+        enum fan_mode mode;
     } fan;
     struct
     {
-#define BKDR_STOP 0x0F8775F2
-#define BKDR_LEFT 0x0E936497
-#define BKDR_RIGHT 0xDF4832F0
-#define BKDR_DIAGLEFT 0x2CB9460E
-#define BKDR_DIAGRIGHT 0x4CAA92D5
-        uint32_t scroll;
+        enum oled_scroll scroll;
         _Bool invert;
         _Bool dimmed;
     } oled;
@@ -108,25 +124,25 @@ static struct model
     _Bool verbose;
     _Bool get;
     _Bool set;
-} model = {
-    .config = MODEL_CONFIG,
-    .sleep = MODEL_SLEEP_MIN,
+} hat = {
+    .config = HAT_CONFIG,
+    .sleep = HAT_SLEEP_MIN,
     .i2cd = 0,
     .cpu = {.temp = 0, .idle = 0, .total = 0, .usage = 0},
     .led = {
         .rgb = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}},
-        .mode = BKDR_DISABLE,
-        .speed = BKDR_MIDDLE,
-        .color = BKDR_GREEN,
+        .mode = LED_MODE_DISABLE,
+        .speed = LED_SPEED_MIDDLE,
+        .color = LED_COLOR_GREEN,
     },
     .fan = {
         .bound = {.lower = 42, .upper = 60},
         .current_speed = 0,
-        .speed = MODEL_FAN_SPEED_MAX,
-        .mode = BKDR_SINGLE,
+        .speed = HAT_FAN_SPEED_MAX,
+        .mode = FAN_MODE_SIGNLE,
     },
     .oled = {
-        .scroll = BKDR_STOP,
+        .scroll = OLED_SCROLL_STOP,
         .invert = false,
         .dimmed = false,
     },
@@ -173,114 +189,140 @@ static uint32_t bkdr(void const *const _str)
 static void model_load_led(void)
 {
     char const *const section = "led";
-    if (model.verbose)
+    if (hat.verbose)
     {
         printf("[%s]\n", section);
     }
 
     char buffer[128];
-    ini_gets(section, "rgb1", "", buffer, sizeof(buffer), model.config);
-    byte_parse(model.led.rgb[0], 3, buffer);
-    if (model.verbose)
+    ini_gets(section, "rgb1", "", buffer, sizeof(buffer), hat.config);
+    byte_parse(hat.led.rgb[0], 3, buffer);
+    if (hat.verbose)
     {
-        printf("rgb1=0x%02X,0x%02X,0x%02X\n", model.led.rgb[0][0], model.led.rgb[0][1], model.led.rgb[0][2]);
+        printf("rgb1=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[0][0], hat.led.rgb[0][1], hat.led.rgb[0][2]);
     }
 
-    ini_gets(section, "rgb2", "", buffer, sizeof(buffer), model.config);
-    byte_parse(model.led.rgb[1], 3, buffer);
-    if (model.verbose)
+    ini_gets(section, "rgb2", "", buffer, sizeof(buffer), hat.config);
+    byte_parse(hat.led.rgb[1], 3, buffer);
+    if (hat.verbose)
     {
-        printf("rgb2=0x%02X,0x%02X,0x%02X\n", model.led.rgb[1][0], model.led.rgb[1][1], model.led.rgb[1][2]);
+        printf("rgb2=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[1][0], hat.led.rgb[1][1], hat.led.rgb[1][2]);
     }
 
-    ini_gets(section, "rgb3", "", buffer, sizeof(buffer), model.config);
-    byte_parse(model.led.rgb[2], 3, buffer);
-    if (model.verbose)
+    ini_gets(section, "rgb3", "", buffer, sizeof(buffer), hat.config);
+    byte_parse(hat.led.rgb[2], 3, buffer);
+    if (hat.verbose)
     {
-        printf("rgb3=0x%02X,0x%02X,0x%02X\n", model.led.rgb[2][0], model.led.rgb[2][1], model.led.rgb[2][2]);
+        printf("rgb3=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[2][0], hat.led.rgb[2][1], hat.led.rgb[2][2]);
     }
 
-    ini_gets(section, "mode", "disable", buffer, sizeof(buffer), model.config);
-    model.led.mode = bkdr(buffer);
-    if (model.verbose)
+    char const *mode;
+    ini_gets(section, "mode", "disable", buffer, sizeof(buffer), hat.config);
+    switch (bkdr(buffer))
     {
-        char const *mode;
-        switch (model.led.mode)
-        {
-        default:
-        case BKDR_DISABLE:
-            mode = "disable";
-            break;
-        case BKDR_WATER:
-            mode = "water";
-            break;
-        case BKDR_BREATHING:
-            mode = "breathing";
-            break;
-        case BKDR_MARQUEE:
-            mode = "marquee";
-            break;
-        case BKDR_RAINBOW:
-            mode = "rainbow";
-            break;
-        case BKDR_COLORFUL:
-            mode = "colorful";
-            break;
-        }
+    case 0x00000030: // 0
+    case 0x35FDBB97: // water
+        hat.led.mode = LED_MODE_WATER;
+        mode = "water";
+        break;
+    case 0x00000031: // 1
+    case 0x5DC61AC6: // breathing
+        hat.led.mode = LED_MODE_BREATHING;
+        mode = "breathing";
+        break;
+    case 0x00000032: // 2
+    case 0x1D8B3AA6: // marquee
+        hat.led.mode = LED_MODE_MARQUEE;
+        mode = "marquee";
+        break;
+    case 0x00000033: // 3
+    case 0x06A0FFBE: // rainbow
+        hat.led.mode = LED_MODE_RAINBOW;
+        mode = "rainbow";
+        break;
+    case 0x00000034: // 4
+    case 0x4D6E39E2: // colorful
+        hat.led.mode = LED_MODE_COLORFUL;
+        mode = "rainbow";
+        break;
+    default:
+    case 0xAECA0228: // disable
+        hat.led.mode = LED_MODE_DISABLE;
+        mode = "disable";
+        break;
+    }
+    if (hat.verbose)
+    {
         printf("mode=%s\n", mode);
     }
 
-    ini_gets(section, "speed", "middle", buffer, sizeof(buffer), model.config);
-    model.led.speed = bkdr(buffer);
-    if (model.verbose)
+    char const *speed;
+    ini_gets(section, "speed", "middle", buffer, sizeof(buffer), hat.config);
+    switch (bkdr(buffer))
     {
-        char const *speed;
-        switch (model.led.speed)
-        {
-        case BKDR_SLOW:
-            speed = "slow";
-            break;
-        default:
-        case BKDR_MIDDLE:
-            speed = "middle";
-            break;
-        case BKDR_FAST:
-            speed = "fast";
-            break;
-        }
+    case 0x00000031: // 1
+    case 0x0F855DB1: // slow
+        hat.led.speed = LED_SPEED_SLOW;
+        speed = "slow";
+        break;
+    default:
+    case 0x57F49EE9: // middle
+        hat.led.speed = LED_SPEED_MIDDLE;
+        speed = "middle";
+        break;
+    case 0x00000033: // 3
+    case 0x0DC48D78: // fast
+        hat.led.speed = LED_SPEED_FAST;
+        speed = "fast";
+        break;
+    }
+    if (hat.verbose)
+    {
         printf("speed=%s\n", speed);
     }
 
-    ini_gets(section, "color", "green", buffer, sizeof(buffer), model.config);
-    model.led.color = bkdr(buffer);
-    if (model.verbose)
+    char const *color;
+    ini_gets(section, "color", "green", buffer, sizeof(buffer), hat.config);
+    switch (bkdr(buffer))
     {
-        char const *color;
-        switch (model.led.color)
-        {
-        case BKDR_RED:
-            color = "red";
-            break;
-        default:
-        case BKDR_GREEN:
-            color = "green";
-            break;
-        case BKDR_BLUE:
-            color = "blue";
-            break;
-        case BKDR_YELLOW:
-            color = "yellow";
-            break;
-        case BKDR_PURPLE:
-            color = "purple";
-            break;
-        case BKDR_CYAN:
-            color = "cyan";
-            break;
-        case BKDR_WHITE:
-            color = "white";
-            break;
-        }
+    case 0x00000030: // 0
+    case 0x001E0E15: // red
+        hat.led.color = LED_COLOR_RED;
+        color = "red";
+        break;
+    default:
+    case 0x1F659047: // green
+        hat.led.color = LED_COLOR_GREEN;
+        color = "green";
+        break;
+    case 0x00000032: // 2
+    case 0x0D3E3966: // blue
+        hat.led.color = LED_COLOR_BLUE;
+        color = "blue";
+        break;
+    case 0x00000033: // 3
+    case 0xDD05D5C4: // yellow
+        hat.led.color = LED_COLOR_YELLOW;
+        color = "yellow";
+        break;
+    case 0x00000034: // 4
+    case 0x1F096FF4: // purple
+        hat.led.color = LED_COLOR_PURPLE;
+        color = "purple";
+        break;
+    case 0x00000035: // 5
+    case 0x0D63E443: // cyan
+        hat.led.color = LED_COLOR_CYAN;
+        color = "cyan";
+        break;
+    case 0x00000036: // 6
+    case 0x36EB0111: // white
+        hat.led.color = LED_COLOR_WHITE;
+        color = "white";
+        break;
+    }
+    if (hat.verbose)
+    {
         printf("color=%s\n", color);
     }
 }
@@ -288,36 +330,40 @@ static void model_load_led(void)
 static void model_load_fan(void)
 {
     char const *const section = "fan";
-    if (model.verbose)
+    if (hat.verbose)
     {
         printf("[%s]\n", section);
     }
 
     char buffer[128];
-    ini_gets(section, "mode", "single", buffer, sizeof(buffer), model.config);
-    model.fan.mode = bkdr(buffer);
-    if (model.verbose)
+    char const *mode;
+    ini_gets(section, "mode", "single", buffer, sizeof(buffer), hat.config);
+    switch (bkdr(buffer))
     {
-        char const *mode;
-        switch (model.fan.mode)
-        {
-        case BKDR_DIRECT:
-            mode = "direct";
-            break;
-        default:
-        case BKDR_SINGLE:
-            mode = "single";
-            break;
-        case BKDR_GRADED:
-            mode = "graded";
-            break;
-        }
+    case 0x00000030: // 0
+    case 0x822E74D5: // direct
+        hat.fan.mode = FAN_MODE_DIRECT;
+        mode = "direct";
+        break;
+    default:
+    case 0x3E6634C4: // single
+        hat.fan.mode = FAN_MODE_SIGNLE;
+        mode = "single";
+        break;
+    case 0x00000032: // 2
+    case 0x106F56A9: // graded
+        hat.fan.mode = FAN_MODE_GRADED;
+        mode = "graded";
+        break;
+    }
+    if (hat.verbose)
+    {
         printf("mode=%s\n", mode);
     }
 
     uint8_t bound;
     char *endptr = buffer;
-    ini_gets(section, "bound", "", buffer, sizeof(buffer), model.config);
+    ini_gets(section, "bound", "", buffer, sizeof(buffer), hat.config);
     while (*endptr && !isdigit(*endptr))
     {
         ++endptr;
@@ -325,7 +371,7 @@ static void model_load_fan(void)
     bound = (uint8_t)strtol(endptr, &endptr, 0);
     if (bound > 0)
     {
-        model.fan.bound.lower = bound < MODEL_FAN_BOUND_MAX ? bound : MODEL_FAN_BOUND_MAX;
+        hat.fan.bound.lower = bound < HAT_FAN_BOUND_MAX ? bound : HAT_FAN_BOUND_MAX;
     }
     while (*endptr && !isdigit(*endptr))
     {
@@ -334,80 +380,88 @@ static void model_load_fan(void)
     bound = (uint8_t)strtol(endptr, &endptr, 0);
     if (bound > 0)
     {
-        model.fan.bound.upper = bound < MODEL_FAN_BOUND_MAX ? bound : MODEL_FAN_BOUND_MAX;
+        hat.fan.bound.upper = bound < HAT_FAN_BOUND_MAX ? bound : HAT_FAN_BOUND_MAX;
     }
-    if (model.fan.bound.lower == model.fan.bound.upper)
+    if (hat.fan.bound.lower == hat.fan.bound.upper)
     {
-        model.fan.bound.lower = model.fan.bound.upper - 1;
+        hat.fan.bound.lower = hat.fan.bound.upper - 1;
     }
-    else if (model.fan.bound.lower > model.fan.bound.upper)
+    else if (hat.fan.bound.lower > hat.fan.bound.upper)
     {
-        bound = model.fan.bound.lower;
-        model.fan.bound.lower = model.fan.bound.upper;
-        model.fan.bound.upper = bound;
+        bound = hat.fan.bound.lower;
+        hat.fan.bound.lower = hat.fan.bound.upper;
+        hat.fan.bound.upper = bound;
     }
-    if (model.verbose)
+    if (hat.verbose)
     {
-        printf("bound=%u,%u\n", model.fan.bound.lower, model.fan.bound.upper);
+        printf("bound=%u,%u\n", hat.fan.bound.lower, hat.fan.bound.upper);
     }
 
-    model.fan.speed = (uint8_t)ini_getl(section, "speed", 9, model.config);
-    if (model.fan.speed > MODEL_FAN_SPEED_MAX)
+    hat.fan.speed = (uint8_t)ini_getl(section, "speed", HAT_FAN_SPEED_MAX, hat.config);
+    if (hat.fan.speed > HAT_FAN_SPEED_MAX)
     {
-        model.fan.speed = MODEL_FAN_SPEED_MAX;
+        hat.fan.speed = HAT_FAN_SPEED_MAX;
     }
-    if (model.verbose)
+    if (hat.verbose)
     {
-        printf("speed=%u\n", model.fan.speed);
+        printf("speed=%u\n", hat.fan.speed);
     }
 }
 
 static void model_load_oled(void)
 {
     char const *const section = "oled";
-    if (model.verbose)
+    if (hat.verbose)
     {
         printf("[%s]\n", section);
     }
 
     char buffer[128];
-    ini_gets(section, "scroll", "stop", buffer, sizeof(buffer), model.config);
-    model.oled.scroll = bkdr(buffer);
-    if (model.verbose)
+    char const *scroll;
+    ini_gets(section, "scroll", "stop", buffer, sizeof(buffer), hat.config);
+    switch (bkdr(buffer))
     {
-        char const *scroll;
-        switch (model.oled.scroll)
-        {
-        default:
-        case BKDR_STOP:
-            scroll = "stop";
-            break;
-        case BKDR_LEFT:
-            scroll = "left";
-            break;
-        case BKDR_RIGHT:
-            scroll = "right";
-            break;
-        case BKDR_DIAGLEFT:
-            scroll = "diagleft";
-            break;
-        case BKDR_DIAGRIGHT:
-            scroll = "diagright";
-            break;
-        }
+    default:
+    case 0x0F8775F2: // stop
+        hat.oled.scroll = OLED_SCROLL_STOP;
+        scroll = "stop";
+        break;
+    case 0x00000031: // 1
+    case 0x0E936497: // left
+        hat.oled.scroll = OLED_SCROLL_LEFT;
+        scroll = "left";
+        break;
+    case 0x00000032: // 2
+    case 0xDF4832F0: // right
+        hat.oled.scroll = OLED_SCROLL_RIGHT;
+        scroll = "right";
+        break;
+    case 0x00000033: // 3
+    case 0x2CB9460E: // diagleft
+        hat.oled.scroll = OLED_SCROLL_DIAGLEFT;
+        scroll = "diagleft";
+        break;
+    case 0x00000034: // 4
+    case 0x4CAA92D5: // diagright
+        hat.oled.scroll = OLED_SCROLL_DIAGRIGHT;
+        scroll = "diagright";
+        break;
+    }
+    if (hat.verbose)
+    {
         printf("scroll=%s\n", scroll);
     }
 
-    model.oled.invert = (_Bool)ini_getbool(section, "invert", false, model.config);
-    if (model.verbose)
+    hat.oled.invert = (_Bool)ini_getbool(section, "invert", false, hat.config);
+    if (hat.verbose)
     {
-        printf("invert=%u\n", model.oled.invert);
+        printf("invert=%u\n", hat.oled.invert);
     }
 
-    model.oled.dimmed = (_Bool)ini_getbool(section, "dimmed", false, model.config);
-    if (model.verbose)
+    hat.oled.dimmed = (_Bool)ini_getbool(section, "dimmed", false, hat.config);
+    if (hat.verbose)
     {
-        printf("dimmed=%u\n", model.oled.dimmed);
+        printf("dimmed=%u\n", hat.oled.dimmed);
     }
 }
 
@@ -423,48 +477,48 @@ void model_load(void)
         }
         if (strncmp(buffer, "Raspberry Pi 4", sizeof("Raspberry Pi 4") - 1) == 0)
         {
-            model.fan.bound.lower = 48;
+            hat.fan.bound.lower = 48;
             goto close;
         }
         if (strncmp(buffer, "Raspberry Pi 3", sizeof("Raspberry Pi 3") - 1) == 0)
         {
-            model.fan.bound.lower = 42;
+            hat.fan.bound.lower = 42;
             goto close;
         }
         if (strncmp(buffer, "Hobot X3 PI", sizeof("Hobot X3 PI") - 1) == 0)
         {
-            model.fan.bound.lower = 45;
+            hat.fan.bound.lower = 45;
         }
     close:
-        if (model.verbose)
+        if (hat.verbose)
         {
             printf("Model: %s\n", buffer);
         }
         close(fd);
     }
-    if (model.verbose)
+    if (hat.verbose)
     {
-        printf("Loaded configuration file: %s\n", model.config);
+        printf("Loaded configuration file: %s\n", hat.config);
     }
 
     char buffer[128];
-    ini_gets("", "i2c", MODEL_DEV_I2C, buffer, sizeof(buffer), model.config);
-    if (model.verbose)
+    ini_gets("", "i2c", HAT_DEV_I2C, buffer, sizeof(buffer), hat.config);
+    if (hat.verbose)
     {
         printf("i2c=%s\n", buffer);
     }
     extern int i2cd;
     i2cd = open(buffer, O_RDWR);
-    model.i2cd = i2cd;
+    hat.i2cd = i2cd;
 
-    model.sleep = (unsigned)ini_getl("", "sleep", MODEL_SLEEP_MIN, model.config);
-    if (model.sleep < MODEL_SLEEP_MIN)
+    hat.sleep = (unsigned)ini_getl("", "sleep", HAT_SLEEP_MIN, hat.config);
+    if (hat.sleep < HAT_SLEEP_MIN)
     {
-        model.sleep = MODEL_SLEEP_MIN;
+        hat.sleep = HAT_SLEEP_MIN;
     }
-    if (model.verbose)
+    if (hat.verbose)
     {
-        printf("sleep=%i\n", model.sleep);
+        printf("sleep=%i\n", hat.sleep);
     }
 
     model_load_led();
@@ -475,7 +529,7 @@ void model_load(void)
 static long cpu_get_temp(void)
 {
     long temp = 0;
-    int fd = open(MODEL_CPU_TEMP, O_RDONLY);
+    int fd = open(HAT_CPU_TEMP, O_RDONLY);
     if (fd > 0)
     {
         char buf[16]; /* -40xxx ~ 85xxx */
@@ -490,28 +544,28 @@ static long cpu_get_temp(void)
 
 static unsigned int cpu_get_usage(void)
 {
-    FILE *f = fopen(MODEL_CPU_USAGE, "r");
+    FILE *f = fopen(HAT_CPU_USAGE, "r");
     if (f)
     {
         long user, nice, sys, idle, iowait, irq, softirq;
         if (fscanf(f, " %*s%ld%ld%ld%ld%ld%ld%ld", &user, &nice, &sys, &idle, &iowait, &irq, &softirq))
         {
             long total = user + nice + sys + idle + iowait + irq + softirq;
-            long delta = total - model.cpu.total;
-            model.cpu.usage = (unsigned int)((float)(delta - (idle - model.cpu.idle)) / delta * 100);
-            model.cpu.total = total;
-            model.cpu.idle = idle;
+            long delta = total - hat.cpu.total;
+            hat.cpu.usage = (unsigned int)((float)(delta - (idle - hat.cpu.idle)) / delta * 100);
+            hat.cpu.total = total;
+            hat.cpu.idle = idle;
         }
         fclose(f);
     }
-    return model.cpu.usage;
+    return hat.cpu.usage;
 }
 
 static int get_disk(char *buffer)
 {
     int ok = 0;
     struct statfs info;
-    if (statfs(MODEL_DISK_ROOT, &info) == 0)
+    if (statfs(HAT_DISK_ROOT, &info) == 0)
     {
         unsigned long long free = info.f_bfree * info.f_bsize;
         unsigned long long total = info.f_blocks * info.f_bsize;
@@ -565,56 +619,56 @@ static int get_ip(char *buffer)
 
 static void model_init(void)
 {
-    if (model.i2cd < 0)
+    if (hat.i2cd < 0)
     {
         fprintf(stderr, "Fail to init I2C!\n");
         exit(EXIT_FAILURE);
     }
-    ioctl(model.i2cd, I2C_RETRIES, 5);
-    if (model.get)
+    ioctl(hat.i2cd, I2C_RETRIES, 5);
+    if (hat.get)
     {
-        i2c_read(model.i2cd, model.i2c[0], model.i2c[1], model.i2c + 2);
-        printf("0x%02X\n", model.i2c[2]);
+        i2c_read(hat.i2cd, hat.i2c[0], hat.i2c[1], hat.i2c + 2);
+        printf("0x%02X\n", hat.i2c[2]);
         exit(EXIT_SUCCESS);
     }
-    if (model.set)
+    if (hat.set)
     {
-        i2c_write(model.i2cd, model.i2c[0], model.i2c[1], model.i2c[2]);
+        i2c_write(hat.i2cd, hat.i2c[0], hat.i2c[1], hat.i2c[2]);
         exit(EXIT_SUCCESS);
     }
     for (unsigned int i = 0; i < 3; ++i)
     {
-        rgb_set(model.i2cd, i, model.led.rgb[i][0], model.led.rgb[i][1], model.led.rgb[i][2]);
+        rgb_set(hat.i2cd, i, hat.led.rgb[i][0], hat.led.rgb[i][1], hat.led.rgb[i][2]);
     }
-    model.fan.current_speed = model.fan.speed;
-    rgb_fan(model.i2cd, model.fan.speed);
+    hat.fan.current_speed = hat.fan.speed;
+    rgb_fan(hat.i2cd, hat.fan.speed);
     ssd1306_begin(SSD1306_SWITCHCAPVCC);
-    switch (model.oled.scroll)
+    switch (hat.oled.scroll)
     {
     default:
-    case BKDR_STOP:
+    case OLED_SCROLL_STOP:
         ssd1306_stopscroll();
         break;
-    case BKDR_LEFT:
+    case OLED_SCROLL_LEFT:
         ssd1306_startscrollleft(0x0, 0xF);
         break;
-    case BKDR_RIGHT:
+    case OLED_SCROLL_RIGHT:
         ssd1306_startscrollright(0x0, 0xF);
         break;
-    case BKDR_DIAGLEFT:
+    case OLED_SCROLL_DIAGLEFT:
         ssd1306_startscrolldiagleft(0x0, 0xF);
         break;
-    case BKDR_DIAGRIGHT:
+    case OLED_SCROLL_DIAGRIGHT:
         ssd1306_startscrolldiagright(0x0, 0xF);
         break;
     }
-    if (model.oled.invert)
+    if (hat.oled.invert)
     {
-        ssd1306_invertDisplay(model.oled.invert);
+        ssd1306_invertDisplay(hat.oled.invert);
     }
-    if (model.oled.dimmed)
+    if (hat.oled.dimmed)
     {
-        ssd1306_dim(model.oled.dimmed);
+        ssd1306_dim(hat.oled.dimmed);
     }
     ssd1306_clearDisplay();
     ssd1306_display();
@@ -622,90 +676,35 @@ static void model_init(void)
 
 static void model_exec(void)
 {
-    model.cpu.temp = cpu_get_temp();
-    if (model.led.mode == BKDR_DISABLE)
+    hat.cpu.temp = cpu_get_temp();
+    if (hat.led.mode == LED_MODE_DISABLE)
     {
-        rgb_off(model.i2cd);
+        rgb_off(hat.i2cd);
     }
     else
     {
-        switch (model.led.mode)
-        {
-        case BKDR_WATER:
-            rgb_effect(model.i2cd, 0);
-            break;
-        case BKDR_BREATHING:
-            rgb_effect(model.i2cd, 1);
-            break;
-        case BKDR_MARQUEE:
-            rgb_effect(model.i2cd, 2);
-            break;
-        case BKDR_RAINBOW:
-            rgb_effect(model.i2cd, 3);
-            break;
-        case BKDR_COLORFUL:
-            rgb_effect(model.i2cd, 4);
-            break;
-        default:
-            break;
-        }
-        switch (model.led.speed)
-        {
-        case BKDR_SLOW:
-            rgb_speed(model.i2cd, 1);
-            break;
-        default:
-        case BKDR_MIDDLE:
-            rgb_speed(model.i2cd, 2);
-            break;
-        case BKDR_FAST:
-            rgb_speed(model.i2cd, 3);
-            break;
-        }
-        switch (model.led.color)
-        {
-        case BKDR_RED:
-            rgb_color(model.i2cd, 0);
-            break;
-        default:
-        case BKDR_GREEN:
-            rgb_color(model.i2cd, 1);
-            break;
-        case BKDR_BLUE:
-            rgb_color(model.i2cd, 2);
-            break;
-        case BKDR_YELLOW:
-            rgb_color(model.i2cd, 3);
-            break;
-        case BKDR_PURPLE:
-            rgb_color(model.i2cd, 4);
-            break;
-        case BKDR_CYAN:
-            rgb_color(model.i2cd, 5);
-            break;
-        case BKDR_WHITE:
-            rgb_color(model.i2cd, 6);
-            break;
-        }
+        rgb_effect(hat.i2cd, hat.led.mode);
+        rgb_speed(hat.i2cd, hat.led.speed);
+        rgb_color(hat.i2cd, hat.led.color);
     }
-    unsigned char speed = model.fan.current_speed;
-    if (model.fan.mode != BKDR_DIRECT)
+    unsigned char speed = hat.fan.current_speed;
+    if (hat.fan.mode != FAN_MODE_DIRECT)
     {
-        if (model.cpu.temp > 1000 * model.fan.bound.upper)
+        if (hat.cpu.temp > 1000 * hat.fan.bound.upper)
         {
-            speed = MODEL_FAN_SPEED_MAX;
+            speed = HAT_FAN_SPEED_MAX;
         }
-        else if (model.cpu.temp > 1000 * model.fan.bound.lower)
+        else if (hat.cpu.temp > 1000 * hat.fan.bound.lower)
         {
-            if (model.fan.mode == BKDR_GRADED)
+            if (hat.fan.mode == FAN_MODE_GRADED)
             {
-                int delta = model.cpu.temp - 1000 * model.fan.bound.lower;
-                int bound = model.fan.bound.upper - model.fan.bound.lower;
-                speed = abs(delta) * MODEL_FAN_SPEED_MAX / bound;
+                int delta = hat.cpu.temp - 1000 * hat.fan.bound.lower;
+                int bound = hat.fan.bound.upper - hat.fan.bound.lower;
+                speed = abs(delta) * HAT_FAN_SPEED_MAX / bound;
             }
             else
             {
-                speed = model.fan.speed;
+                speed = hat.fan.speed;
             }
         }
         else
@@ -713,16 +712,16 @@ static void model_exec(void)
             speed = 0;
         }
     }
-    if (speed > 0 || speed != model.fan.current_speed)
+    if (speed > 0 || speed != hat.fan.current_speed)
     {
-        rgb_fan(model.i2cd, speed);
+        rgb_fan(hat.i2cd, speed);
     }
     {
         char buffer[64];
         ssd1306_clearDisplay();
         sprintf(buffer, "CPU:%u%%", cpu_get_usage());
         ssd1306_drawText(0, 0, buffer);
-        sprintf(buffer, "TEMP:%.1fC", model.cpu.temp / 1000.F);
+        sprintf(buffer, "TEMP:%.1fC", hat.cpu.temp / 1000.F);
         ssd1306_drawText(56, 0, buffer);
         get_ram(buffer);
         ssd1306_drawText(0, 8, buffer);
@@ -736,7 +735,7 @@ static void model_exec(void)
 
 static void model_idle(void)
 {
-    sleep(model.sleep);
+    sleep(hat.sleep);
 }
 
 int main(int argc, char *argv[])
@@ -755,18 +754,18 @@ int main(int argc, char *argv[])
         switch (ok)
         {
         case 1:
-            byte_parse(model.i2c, sizeof(model.i2c), optarg);
-            model.get = true;
+            byte_parse(hat.i2c, sizeof(hat.i2c), optarg);
+            hat.get = true;
             break;
         case 2:
-            byte_parse(model.i2c, sizeof(model.i2c), optarg);
-            model.set = true;
+            byte_parse(hat.i2c, sizeof(hat.i2c), optarg);
+            hat.set = true;
             break;
         case 'c':
-            model.config = optarg;
+            hat.config = optarg;
             break;
         case 'v':
-            model.verbose = true;
+            hat.verbose = true;
             break;
         case '?':
             exit(EXIT_SUCCESS);
@@ -775,7 +774,7 @@ int main(int argc, char *argv[])
             printf("Usage: %s [options]\nOptions:\n", argv[0]);
             puts("      --get DEV,REG     Get the value of the register");
             puts("      --set DEV,REG,VAL Set the value of the register");
-            puts("  -c, --config FILE     Default configuration file: " MODEL_CONFIG);
+            puts("  -c, --config FILE     Default configuration file: " HAT_CONFIG);
             puts("  -v, --verbose         Display detailed log information");
             puts("  -h, --help            Display available options");
             exit(EXIT_SUCCESS);
