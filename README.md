@@ -59,13 +59,22 @@ invert=0 # bool
 dimmed=0 # bool
 ```
 
-### Boot self-starting setting
+### Boot autostart
 
 Edit the file `/etc/rc.local` and add the following content before `exit 0`:
 
 ```sh
 sleep 5s
 /usr/local/bin/yahboom-hat &
+```
+
+### Systemd service autostart
+
+```sh
+sudo cp yahboom-hat.service /etc/systemd/system
+sudo systemctl daemon-reload
+sudo systemctl enable yahboom-hat
+sudo systemctl start yahboom-hat
 ```
 
 ## References

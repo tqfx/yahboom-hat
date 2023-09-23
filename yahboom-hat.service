@@ -1,0 +1,13 @@
+[Unit]
+Descrition=RGB Cooling HAT
+
+[Service]
+User=root
+Type=simple
+ExecReload=/usr/bin/killl -s HUP $MAINPID
+ExecStart=/usr/local/bin/yahboom-hat
+ExecStop=/usr/bin/kill -s TERM $MAINPID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
