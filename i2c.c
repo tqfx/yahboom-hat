@@ -26,7 +26,7 @@ int i2c_write(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned c
         return ~0;
     }
 
-    usleep(300);
+    usleep(1000);
     return 0;
 }
 
@@ -52,6 +52,6 @@ int i2c_read(int fd, unsigned char dev_addr, unsigned char reg_addr, unsigned ch
         return ~0;
     }
 
-    usleep(300);
+    usleep(1000);
     return 0;
 }
