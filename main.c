@@ -119,6 +119,7 @@ static struct model
         enum oled_scroll scroll;
         _Bool invert;
         _Bool dimmed;
+        _Bool enable;
     } oled;
     uint8_t i2c[3];
     _Bool verbose;
@@ -145,6 +146,7 @@ static struct model
         .scroll = OLED_SCROLL_STOP,
         .invert = false,
         .dimmed = false,
+        .enable = true,
     },
     .i2c = {0, 0, 0},
     .verbose = false,
@@ -186,7 +188,7 @@ static uint32_t bkdr(void const *const _str)
     return val;
 }
 
-static void model_load_led(void)
+static void hat_load_led(void)
 {
     char const *const section = "led";
     if (hat.verbose)
@@ -327,7 +329,7 @@ static void model_load_led(void)
     }
 }
 
-static void model_load_fan(void)
+static void hat_load_fan(void)
 {
     char const *const section = "fan";
     if (hat.verbose)
@@ -408,7 +410,7 @@ static void model_load_fan(void)
     }
 }
 
-static void model_load_oled(void)
+static void hat_load_oled(void)
 {
     char const *const section = "oled";
     if (hat.verbose)
@@ -463,9 +465,15 @@ static void model_load_oled(void)
     {
         printf("  dimmed=%u\n", hat.oled.dimmed);
     }
+
+    hat.oled.enable = (_Bool)ini_getbool(section, "enable", true, hat.config);
+    if (hat.verbose)
+    {
+        printf("  enable=%u\n", hat.oled.enable);
+    }
 }
 
-void model_load(void)
+void hat_load(void)
 {
     if (hat.verbose)
     {
@@ -523,9 +531,9 @@ void model_load(void)
         printf("  sleep=%i\n", hat.sleep);
     }
 
-    model_load_led();
-    model_load_fan();
-    model_load_oled();
+    hat_load_led();
+    hat_load_fan();
+    hat_load_oled();
     putchar('\n');
 }
 
@@ -547,21 +555,22 @@ static long cpu_get_temp(void)
 
 static unsigned int cpu_get_usage(void)
 {
+    unsigned int usage = 0;
     FILE *f = fopen(HAT_CPU_USAGE, "r");
     if (f)
     {
         long user, nice, sys, idle, iowait, irq, softirq;
-        if (fscanf(f, " %*s%ld%ld%ld%ld%ld%ld%ld", &user, &nice, &sys, &idle, &iowait, &irq, &softirq))
+        if (fscanf(f, " %*s%ld%ld%ld%ld%ld%ld%ld", &user, &nice, &sys, &idle, &iowait, &irq, &softirq) > 0)
         {
             long total = user + nice + sys + idle + iowait + irq + softirq;
             long delta = total - hat.cpu.total;
-            hat.cpu.usage = (unsigned int)((float)(delta - (idle - hat.cpu.idle)) / delta * 100);
+            usage = (unsigned int)((float)(delta - (idle - hat.cpu.idle)) / delta * 100);
             hat.cpu.total = total;
             hat.cpu.idle = idle;
         }
         fclose(f);
     }
-    return hat.cpu.usage;
+    return usage;
 }
 
 static int get_disk(char *buffer)
@@ -606,21 +615,22 @@ static int get_ip(char *buffer)
             case 0x0DA733A3: // eth0
                 sprintf(buffer, "eth0:%s", address_buffer);
                 ok = 1;
-                break;
+                goto ok;
             case 0x37721BEE: // wlan0
                 sprintf(buffer, "wlan0:%s", address_buffer);
                 ok = 1;
-                break;
+                goto ok;
             default:
                 break;
             }
         }
         ifaddrs = ifaddrs->ifa_next;
     }
+ok:
     return ok;
 }
 
-static void model_init(void)
+static void hat_init(void)
 {
     if (hat.i2cd < 0)
     {
@@ -677,9 +687,10 @@ static void model_init(void)
     ssd1306_display();
 }
 
-static void model_exec(void)
+static void hat_exec(void)
 {
     hat.cpu.temp = cpu_get_temp();
+    hat.cpu.usage = cpu_get_usage();
     if (hat.led.mode == LED_MODE_DISABLE)
     {
         rgb_off(hat.i2cd);
@@ -719,10 +730,11 @@ static void model_exec(void)
     {
         rgb_fan(hat.i2cd, speed);
     }
+    if (hat.oled.enable)
     {
         char buffer[64];
         ssd1306_clearDisplay();
-        sprintf(buffer, "CPU:%u%%", cpu_get_usage());
+        sprintf(buffer, "CPU:%u%%", hat.cpu.usage);
         ssd1306_drawText(0, 0, buffer);
         sprintf(buffer, "TEMP:%.1fC", hat.cpu.temp / 1000.F);
         ssd1306_drawText(56, 0, buffer);
@@ -736,7 +748,7 @@ static void model_exec(void)
     }
 }
 
-static void model_idle(void)
+static void hat_idle(void)
 {
     sleep(hat.sleep);
 }
@@ -784,10 +796,10 @@ int main(int argc, char *argv[])
         }
     }
 
-    model_load();
+    hat_load();
 
-    for (model_init();; model_idle())
+    for (hat_init();; hat_idle())
     {
-        model_exec();
+        hat_exec();
     }
 }
