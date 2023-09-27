@@ -57,6 +57,7 @@ speed=9 # 0~9
 scroll=stop # stop left right diagleft diagright
 invert=0 # bool
 dimmed=0 # bool
+enable=1 # bool
 ```
 
 ### Boot autostart
