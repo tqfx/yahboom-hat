@@ -18,6 +18,7 @@
 */
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -27,6 +28,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/sysinfo.h>
+#include <linux/limits.h>
 #include <linux/i2c-dev.h>
 #include <linux/i2c.h>
 #include <sys/ioctl.h>
@@ -36,6 +38,7 @@
 
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
+#include "pool_str.h"
 #include "main.h"
 #include "i2c.h"
 #include "rgb.h"
@@ -84,6 +87,10 @@ enum oled_scroll
 #define true !false
 static struct model
 {
+    struct
+    {
+        struct pool_str str;
+    } pool;
     char const *config;
 #define HAT_SLEEP_MIN 1
     unsigned int sleep;
@@ -126,6 +133,9 @@ static struct model
     _Bool get;
     _Bool set;
 } hat = {
+    .pool = {
+        .str = POOL_STR_INIT,
+    },
     .config = HAT_CONFIG,
     .sleep = HAT_SLEEP_MIN,
     .i2cd = 0,
@@ -473,11 +483,59 @@ static void hat_load_oled(void)
     }
 }
 
-void hat_load(void)
+static void hat_load(void)
 {
+    {
+        char *config = "/etc/" HAT_CONFIG;
+        if (access(config, R_OK) == 0)
+        {
+            hat.config = config;
+            goto hat_config;
+        }
+        if (hat.verbose)
+        {
+            printf("Locate: %s\n", config);
+        }
+    }
+    {
+        char *config = pool_str_putf(&hat.pool.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
+        if (access(config, R_OK) == 0)
+        {
+            hat.config = config;
+            goto hat_config;
+        }
+        if (hat.verbose)
+        {
+            printf("Locate: %s\n", config);
+        }
+        pool_str_undo(&hat.pool.str);
+    }
+    {
+        char buffer[PATH_MAX];
+        ssize_t n = readlink("/proc/self/exe", buffer, PATH_MAX);
+        char *config = pool_str_putf(&hat.pool.str, "%.*s.ini", (int)n, buffer);
+        if (access(config, R_OK) == 0)
+        {
+            hat.config = config;
+            goto hat_config;
+        }
+        if (hat.verbose)
+        {
+            printf("Locate: %s\n", config);
+        }
+        pool_str_undo(&hat.pool.str);
+    }
+hat_config:
     if (hat.verbose)
     {
-        printf("Config: %s\n", hat.config);
+        if (access(hat.config, R_OK) == 0)
+        {
+            printf("Config: %s\n", hat.config);
+        }
+        else
+        {
+            printf("Config:\n");
+        }
     }
 
     int fd = open("/proc/device-tree/model", O_RDONLY);
@@ -509,10 +567,19 @@ void hat_load(void)
         }
         close(fd);
     }
+    if (hat.verbose)
+    {
+        putchar('\n');
+    }
 
-    putchar('\n');
     char buffer[128];
     ini_gets("", "i2c", HAT_DEV_I2C, buffer, sizeof(buffer), hat.config);
+    if (isdigit(*buffer))
+    {
+        char *endptr;
+        long line = strtol(buffer, &endptr, 0);
+        sprintf(buffer, "/dev/i2c-%li", line);
+    }
     if (hat.verbose)
     {
         printf("  i2c=%s\n", buffer);
@@ -534,7 +601,10 @@ void hat_load(void)
     hat_load_led();
     hat_load_fan();
     hat_load_oled();
-    putchar('\n');
+    if (hat.verbose)
+    {
+        putchar('\n');
+    }
 }
 
 static long cpu_get_temp(void)
@@ -753,6 +823,11 @@ static void hat_idle(void)
     sleep(hat.sleep);
 }
 
+static void hat_exit(void)
+{
+    pool_str_exit(&hat.pool.str);
+}
+
 int main(int argc, char *argv[])
 {
     char const *shortopts = "c:vh";
@@ -796,6 +871,8 @@ int main(int argc, char *argv[])
         }
     }
 
+    pool_str_init(&hat.pool.str, BUFSIZ);
+    atexit(hat_exit);
     hat_load();
 
     for (hat_init();; hat_idle())

@@ -14,6 +14,8 @@ add_executable(${PROJECT_NAME}
   minIni/minIni.c
   ssd1306_i2c.h
   ssd1306_i2c.c
+  pool_str.h
+  pool_str.c
   i2c.h
   i2c.c
   rgb.h
