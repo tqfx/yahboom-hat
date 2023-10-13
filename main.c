@@ -486,7 +486,9 @@ static void hat_load_oled(void)
 static void hat_load(void)
 {
     {
-        char *config = "/etc/" HAT_CONFIG;
+        char *prefix = getenv("PREFIX");
+        prefix = prefix ? prefix : "";
+        char *config = pool_str_putf(&hat.pool.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
         if (access(config, R_OK) == 0)
         {
             hat.config = config;
@@ -496,6 +498,7 @@ static void hat_load(void)
         {
             printf("Locate: %s\n", config);
         }
+        pool_str_undo(&hat.pool.str);
     }
     {
         char *config = pool_str_putf(&hat.pool.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
