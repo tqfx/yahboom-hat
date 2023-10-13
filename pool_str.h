@@ -1,5 +1,5 @@
-#ifndef POOL_STR
-#define POOL_STR
+#ifndef POOL_STR_H
+#define POOL_STR_H
 
 #include <stddef.h>
 #include <stdarg.h>
