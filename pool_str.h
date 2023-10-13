@@ -4,10 +4,9 @@
 #include <stddef.h>
 #include <stdarg.h>
 
-#define POOL_STR_INIT \
-    {                 \
-        NULL, 0, 0    \
-    }
+// clang-format off
+#define POOL_STR_INIT {NULL, 0, 0}
+// clang-format on
 
 struct pool_str
 {
@@ -34,11 +33,16 @@ static inline char *pool_str_done(struct pool_str *ctx, size_t n)
     return p;
 }
 
+static inline int pool_str_have(struct pool_str *ctx, char const *p)
+{
+    return p >= ctx->p && p < ctx->p + ctx->n;
+}
+
 #if defined(__cplusplus)
 extern "C" {
 #endif /* __cplusplus */
 
-void pool_str_init(struct pool_str *ctx, size_t size);
+void pool_str_init(struct pool_str *ctx, size_t m);
 void pool_str_grow(struct pool_str *ctx, size_t n);
 void pool_str_exit(struct pool_str *ctx);
 
@@ -56,7 +60,7 @@ char *pool_str_putf(struct pool_str *ctx, char const *fmt, ...)
     ;
 char *pool_str_undo(struct pool_str *ctx);
 
-void pool_str_drop(struct pool_str *ctx, char const *str);
+void pool_str_drop(struct pool_str *ctx, char const *p);
 
 #if defined(__cplusplus)
 } /* extern "C" */

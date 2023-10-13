@@ -3,10 +3,14 @@
 #include <string.h>
 #include <stdio.h>
 
-void pool_str_init(struct pool_str *ctx, size_t size)
+void pool_str_init(struct pool_str *ctx, size_t m)
 {
-    ctx->p = (char *)malloc(size);
-    ctx->m = size;
+    if (m == 0)
+    {
+        m = BUFSIZ;
+    }
+    ctx->p = (char *)malloc(m);
+    ctx->m = m;
     ctx->n = 0;
 }
 
@@ -29,7 +33,7 @@ void pool_str_exit(struct pool_str *ctx)
 
 char *pool_str_puts(struct pool_str *ctx, char const *str)
 {
-    return pool_str_putn(ctx, str, strlen(str));
+    return pool_str_putn(ctx, str, str ? strlen(str) : 0);
 }
 
 char *pool_str_putn(struct pool_str *ctx, void const *ptr, size_t num)
@@ -96,12 +100,12 @@ char *pool_str_undo(struct pool_str *ctx)
     return p;
 }
 
-void pool_str_drop(struct pool_str *ctx, char const *str)
+void pool_str_drop(struct pool_str *ctx, char const *p)
 {
     char *end = ctx->p + ctx->n;
-    if (str >= ctx->p && str < end)
+    if (p >= ctx->p && p < end)
     {
-        char *str_p = ctx->p + (str - ctx->p);
+        char *str_p = ctx->p + (p - ctx->p);
         size_t str_n = strlen(str_p) + 1;
         char *start = str_p + str_n;
         memmove(str_p, start, (size_t)(end - start));
