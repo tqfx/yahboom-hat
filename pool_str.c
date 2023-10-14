@@ -112,3 +112,46 @@ void pool_str_drop(struct pool_str *ctx, char const *p)
         ctx->n -= str_n;
     }
 }
+
+char *pool_str_head(struct pool_str const *ctx)
+{
+    return ctx->n ? ctx->p : NULL;
+}
+
+char *pool_str_next(struct pool_str const *ctx, char *cur)
+{
+    if (cur)
+    {
+        cur += strlen(cur) + 1;
+        if (cur < ctx->p + ctx->n)
+        {
+            return cur;
+        }
+    }
+    return NULL;
+}
+
+char *pool_str_tail(struct pool_str const *ctx)
+{
+    if (ctx->n)
+    {
+        char *p = ctx->p + ctx->n - 1;
+        while (--p >= ctx->p && *p)
+        {
+        }
+        return ++p;
+    }
+    return NULL;
+}
+
+char *pool_str_prev(struct pool_str const *ctx, char *cur)
+{
+    if (cur && --cur >= ctx->p)
+    {
+        while (--cur >= ctx->p && *cur)
+        {
+        }
+        return ++cur;
+    }
+    return NULL;
+}

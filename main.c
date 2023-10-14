@@ -707,7 +707,7 @@ static void hat_init(void)
 {
     if (hat.i2cd < 0)
     {
-        fprintf(stderr, "Fail to init I2C!\n");
+        fprintf(stderr, "Failed to initialize I2C!\n");
         exit(EXIT_FAILURE);
     }
     ioctl(hat.i2cd, I2C_RETRIES, 5);
@@ -828,6 +828,18 @@ static void hat_idle(void)
 
 static void hat_exit(void)
 {
+    if (hat.verbose)
+    {
+        printf("String: 0x%zX\n", pool_str_size(&hat.pool.str));
+        if (pool_str_used(&hat.pool.str))
+        {
+            putchar('\n');
+        }
+        pool_str_foreach(&hat.pool.str, cur)
+        {
+            printf("\t%s\n", cur);
+        }
+    }
     pool_str_exit(&hat.pool.str);
 }
 

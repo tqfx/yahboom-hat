@@ -1,5 +1,5 @@
 #ifndef POOL_STR_H
-#define POOL_STR_H
+#define POOL_STR_H 0x20231014
 
 #include <stddef.h>
 #include <stdarg.h>
@@ -15,14 +15,19 @@ struct pool_str
     size_t n;
 };
 
-static inline char *pool_str_bufp(struct pool_str const *ctx)
-{
-    return ctx->p + ctx->n;
-}
+static inline char *pool_str_addr(struct pool_str const *ctx) { return ctx->p; }
 
-static inline size_t pool_str_bufn(struct pool_str const *ctx)
+static inline size_t pool_str_size(struct pool_str const *ctx) { return ctx->m; }
+
+static inline size_t pool_str_used(struct pool_str const *ctx) { return ctx->n; }
+
+static inline char *pool_str_bufp(struct pool_str const *ctx) { return ctx->p + ctx->n; }
+
+static inline size_t pool_str_bufn(struct pool_str const *ctx) { return ctx->m - ctx->n; }
+
+static inline int pool_str_have(struct pool_str const *ctx, char const *p)
 {
-    return ctx->m - ctx->n;
+    return p >= ctx->p && p < ctx->p + ctx->n;
 }
 
 static inline char *pool_str_done(struct pool_str *ctx, size_t n)
@@ -31,11 +36,6 @@ static inline char *pool_str_done(struct pool_str *ctx, size_t n)
     ctx->n += n + 1;
     p[n] = 0;
     return p;
-}
-
-static inline int pool_str_have(struct pool_str *ctx, char const *p)
-{
-    return p >= ctx->p && p < ctx->p + ctx->n;
 }
 
 #if defined(__cplusplus)
@@ -61,6 +61,16 @@ char *pool_str_putf(struct pool_str *ctx, char const *fmt, ...)
 char *pool_str_undo(struct pool_str *ctx);
 
 void pool_str_drop(struct pool_str *ctx, char const *p);
+
+char *pool_str_head(struct pool_str const *ctx);
+char *pool_str_next(struct pool_str const *ctx, char *cur);
+#define pool_str_foreach(ctx, cur) \
+    for (char *cur = pool_str_head(ctx); cur; cur = pool_str_next(ctx, cur))
+
+char *pool_str_tail(struct pool_str const *ctx);
+char *pool_str_prev(struct pool_str const *ctx, char *cur);
+#define pool_str_foreach_reverse(ctx, cur) \
+    for (char *cur = pool_str_tail(ctx); cur; cur = pool_str_prev(ctx, cur))
 
 #if defined(__cplusplus)
 } /* extern "C" */
