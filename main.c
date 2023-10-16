@@ -38,7 +38,7 @@
 
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
-#include "pool_str.h"
+#include "strpool.h"
 #include "main.h"
 #include "i2c.h"
 #include "rgb.h"
@@ -87,10 +87,7 @@ enum oled_scroll
 #define true !false
 static struct model
 {
-    struct
-    {
-        struct pool_str str;
-    } pool;
+    struct strpool str;
     char const *config;
 #define HAT_SLEEP_MIN 1
     unsigned int sleep;
@@ -133,9 +130,7 @@ static struct model
     _Bool get;
     _Bool set;
 } hat = {
-    .pool = {
-        .str = POOL_STR_INIT,
-    },
+    .str = STRPOOL_INIT,
     .config = HAT_CONFIG,
     .sleep = HAT_SLEEP_MIN,
     .i2cd = 0,
@@ -488,7 +483,7 @@ static void hat_load(void)
     {
         char *prefix = getenv("PREFIX");
         prefix = prefix ? prefix : "";
-        char *config = pool_str_putf(&hat.pool.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
+        char *config = strpool_putf(&hat.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
         if (access(config, R_OK) == 0)
         {
             hat.config = config;
@@ -498,10 +493,10 @@ static void hat_load(void)
         {
             printf("Locate: %s\n", config);
         }
-        pool_str_undo(&hat.pool.str);
+        strpool_undo(&hat.str);
     }
     {
-        char *config = pool_str_putf(&hat.pool.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
+        char *config = strpool_putf(&hat.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
         if (access(config, R_OK) == 0)
         {
             hat.config = config;
@@ -511,12 +506,12 @@ static void hat_load(void)
         {
             printf("Locate: %s\n", config);
         }
-        pool_str_undo(&hat.pool.str);
+        strpool_undo(&hat.str);
     }
     {
         char buffer[PATH_MAX];
         ssize_t n = readlink("/proc/self/exe", buffer, PATH_MAX);
-        char *config = pool_str_putf(&hat.pool.str, "%.*s.ini", (int)n, buffer);
+        char *config = strpool_putf(&hat.str, "%.*s.ini", (int)n, buffer);
         if (access(config, R_OK) == 0)
         {
             hat.config = config;
@@ -526,7 +521,7 @@ static void hat_load(void)
         {
             printf("Locate: %s\n", config);
         }
-        pool_str_undo(&hat.pool.str);
+        strpool_undo(&hat.str);
     }
 hat_config:
     if (hat.verbose)
@@ -828,19 +823,19 @@ static void hat_idle(void)
 
 static void hat_exit(void)
 {
-    if (hat.verbose)
+    if (hat.verbose && isatty(STDOUT_FILENO) == 0)
     {
-        printf("String: 0x%zX\n", pool_str_size(&hat.pool.str));
-        if (pool_str_used(&hat.pool.str))
+        printf("String: 0x%zX\n", strpool_size(&hat.str));
+        if (strpool_used(&hat.str))
         {
             putchar('\n');
         }
-        pool_str_foreach(&hat.pool.str, cur)
+        strpool_foreach(&hat.str, cur)
         {
             printf("\t%s\n", cur);
         }
     }
-    pool_str_exit(&hat.pool.str);
+    strpool_exit(&hat.str);
 }
 
 int main(int argc, char *argv[])
@@ -886,7 +881,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    pool_str_init(&hat.pool.str, BUFSIZ);
+    strpool_init(&hat.str, BUFSIZ);
     atexit(hat_exit);
     hat_load();
 

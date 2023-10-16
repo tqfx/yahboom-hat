@@ -1,29 +1,41 @@
-#include "pool_str.h"
+#if defined(_MSC_VER)
+#if !defined _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS /* NOLINT */
+#endif /* _CRT_SECURE_NO_WARNINGS */
+#endif /* _MSC_VER */
+#include "strpool.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
-void pool_str_init(struct pool_str *ctx, size_t m)
+void strpool_init(struct strpool *ctx, size_t m)
 {
-    if (m == 0)
-    {
-        m = BUFSIZ;
-    }
-    ctx->p = (char *)malloc(m);
-    ctx->m = m;
+    ctx->m = m ? m : BUFSIZ;
+    ctx->p = (char *)malloc(ctx->m);
     ctx->n = 0;
 }
 
-void pool_str_grow(struct pool_str *ctx, size_t n)
+void strpool_grow(struct strpool *ctx, size_t n)
 {
     do
     {
-        ctx->m <<= 1;
+        --ctx->m;
+        ctx->m |= ctx->m >> 0x01;
+        ctx->m |= ctx->m >> 0x02;
+        ctx->m |= ctx->m >> 0x04;
+        ctx->m |= ctx->m >> 0x08;
+        ctx->m |= ctx->m >> 0x10;
+#if INT_MAX > 0x7FFF
+        ctx->m |= ctx->m >> 0x20;
+#endif /* INT_MAX */
+        ++ctx->m;
+        ctx->m += (ctx->m == 0);
     } while (ctx->n + n > ctx->m);
     ctx->p = (char *)realloc(ctx->p, ctx->m);
 }
 
-void pool_str_exit(struct pool_str *ctx)
+void strpool_exit(struct strpool *ctx)
 {
     free(ctx->p);
     ctx->p = 0;
@@ -31,18 +43,18 @@ void pool_str_exit(struct pool_str *ctx)
     ctx->n = 0;
 }
 
-char *pool_str_puts(struct pool_str *ctx, char const *str)
+char *strpool_puts(struct strpool *ctx, char const *str)
 {
-    return pool_str_putn(ctx, str, str ? strlen(str) : 0);
+    return strpool_putn(ctx, str, str ? strlen(str) : 0);
 }
 
-char *pool_str_putn(struct pool_str *ctx, void const *ptr, size_t num)
+char *strpool_putn(struct strpool *ctx, void const *ptr, size_t num)
 {
     char *str_p;
     size_t str_n = num + 1;
     if (ctx->n + str_n > ctx->m)
     {
-        pool_str_grow(ctx, str_n);
+        strpool_grow(ctx, str_n);
     }
     str_p = ctx->p + ctx->n;
     memcpy(str_p, ptr, num);
@@ -51,7 +63,7 @@ char *pool_str_putn(struct pool_str *ctx, void const *ptr, size_t num)
     return str_p;
 }
 
-char *pool_str_putv(struct pool_str *ctx, char const *fmt, va_list va)
+char *strpool_putv(struct strpool *ctx, char const *fmt, va_list va)
 {
     va_list ap;
     char *str_p;
@@ -65,7 +77,7 @@ char *pool_str_putv(struct pool_str *ctx, char const *fmt, va_list va)
     str_n = num + 1;
     if (str_n > mem)
     {
-        pool_str_grow(ctx, str_n);
+        strpool_grow(ctx, str_n);
         ctx->p = (char *)realloc(ctx->p, ctx->m);
         va_copy(ap, va);
         str_p = ctx->p + ctx->n;
@@ -77,17 +89,17 @@ char *pool_str_putv(struct pool_str *ctx, char const *fmt, va_list va)
     return str_p;
 }
 
-char *pool_str_putf(struct pool_str *ctx, char const *fmt, ...)
+char *strpool_putf(struct strpool *ctx, char const *fmt, ...)
 {
     va_list va;
     char *str_p;
     va_start(va, fmt);
-    str_p = pool_str_putv(ctx, fmt, va);
+    str_p = strpool_putv(ctx, fmt, va);
     va_end(va);
     return str_p;
 }
 
-char *pool_str_undo(struct pool_str *ctx)
+char *strpool_undo(struct strpool *ctx)
 {
     char *p = ctx->p + ctx->n;
     if (--p >= ctx->p && *p == 0)
@@ -100,7 +112,7 @@ char *pool_str_undo(struct pool_str *ctx)
     return p;
 }
 
-void pool_str_drop(struct pool_str *ctx, char const *p)
+void strpool_drop(struct strpool *ctx, char const *p)
 {
     char *end = ctx->p + ctx->n;
     if (p >= ctx->p && p < end)
@@ -113,12 +125,12 @@ void pool_str_drop(struct pool_str *ctx, char const *p)
     }
 }
 
-char *pool_str_head(struct pool_str const *ctx)
+char *strpool_head(struct strpool const *ctx)
 {
     return ctx->n ? ctx->p : NULL;
 }
 
-char *pool_str_next(struct pool_str const *ctx, char *cur)
+char *strpool_next(struct strpool const *ctx, char *cur)
 {
     if (cur)
     {
@@ -131,7 +143,7 @@ char *pool_str_next(struct pool_str const *ctx, char *cur)
     return NULL;
 }
 
-char *pool_str_tail(struct pool_str const *ctx)
+char *strpool_tail(struct strpool const *ctx)
 {
     if (ctx->n)
     {
@@ -144,7 +156,7 @@ char *pool_str_tail(struct pool_str const *ctx)
     return NULL;
 }
 
-char *pool_str_prev(struct pool_str const *ctx, char *cur)
+char *strpool_prev(struct strpool const *ctx, char *cur)
 {
     if (cur && --cur >= ctx->p)
     {
@@ -154,4 +166,23 @@ char *pool_str_prev(struct pool_str const *ctx, char *cur)
         return ++cur;
     }
     return NULL;
+}
+
+char *strpool_find(struct strpool *ctx, char const *p)
+{
+    char *res = NULL;
+    for (char *cur = ctx->n ? ctx->p : NULL; cur;)
+    {
+        if (strcmp(p, cur) == 0)
+        {
+            res = cur;
+            break;
+        }
+        cur += strlen(cur) + 1;
+        if (cur >= ctx->p + ctx->n)
+        {
+            cur = NULL;
+        }
+    }
+    return res;
 }
