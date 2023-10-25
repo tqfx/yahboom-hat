@@ -483,45 +483,45 @@ static void hat_load(void)
     {
         char *prefix = getenv("PREFIX");
         prefix = prefix ? prefix : "";
-        char *config = strpool_putf(&hat.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
-        if (access(config, R_OK) == 0)
+        char *const *config = strpool_putf(&hat.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
+        if (access(*config, R_OK) == 0)
         {
-            hat.config = config;
+            hat.config = *config;
             goto hat_config;
         }
         if (hat.verbose)
         {
-            printf("Locate: %s\n", config);
+            printf("Locate: %s\n", *config);
         }
-        strpool_undo(&hat.str);
+        strpool_dump(&hat.str, config);
     }
     {
-        char *config = strpool_putf(&hat.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
-        if (access(config, R_OK) == 0)
+        char *const *config = strpool_putf(&hat.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
+        if (access(*config, R_OK) == 0)
         {
-            hat.config = config;
+            hat.config = *config;
             goto hat_config;
         }
         if (hat.verbose)
         {
-            printf("Locate: %s\n", config);
+            printf("Locate: %s\n", *config);
         }
-        strpool_undo(&hat.str);
+        strpool_dump(&hat.str, config);
     }
     {
         char buffer[PATH_MAX];
         ssize_t n = readlink("/proc/self/exe", buffer, PATH_MAX);
-        char *config = strpool_putf(&hat.str, "%.*s.ini", (int)n, buffer);
-        if (access(config, R_OK) == 0)
+        char *const *config = strpool_putf(&hat.str, "%.*s.ini", (int)n, buffer);
+        if (access(*config, R_OK) == 0)
         {
-            hat.config = config;
+            hat.config = *config;
             goto hat_config;
         }
         if (hat.verbose)
         {
-            printf("Locate: %s\n", config);
+            printf("Locate: %s\n", *config);
         }
-        strpool_undo(&hat.str);
+        strpool_dump(&hat.str, config);
     }
 hat_config:
     if (hat.verbose)
@@ -825,14 +825,19 @@ static void hat_exit(void)
 {
     if (hat.verbose && isatty(STDOUT_FILENO) == 0)
     {
-        printf("String: 0x%zX\n", strpool_size(&hat.str));
-        if (strpool_used(&hat.str))
+        size_t i = 0;
+        printf("String: 0x%zX\n", hat.str.num + hat.str.pool.num);
+        if (hat.str.num)
         {
             putchar('\n');
         }
+        strpool_pool_foreach(&hat.str, cur)
+        {
+            printf("[%zu]=%s\n", i++, *cur);
+        }
         strpool_foreach(&hat.str, cur)
         {
-            printf("\t%s\n", cur);
+            printf("[%zu]=%s\n", i++, *cur);
         }
     }
     strpool_exit(&hat.str);
@@ -881,7 +886,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    strpool_init(&hat.str, BUFSIZ);
+    strpool_init(&hat.str, NULL, 0);
     atexit(hat_exit);
     hat_load();
 
