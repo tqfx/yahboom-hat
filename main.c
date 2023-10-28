@@ -669,32 +669,30 @@ static int get_ram(char *buffer)
 
 static int get_ip(char *buffer)
 {
-    int ok = 0;
-    struct ifaddrs *ifaddrs;
-    getifaddrs(&ifaddrs);
-    while (ifaddrs)
+    struct ifaddrs *ifaddrs = NULL;
+    int ok = getifaddrs(&ifaddrs) > ~0 ? 1 : 0;
+    for (struct ifaddrs *ifaddr = ifaddrs; ifaddr; ifaddr = ifaddr->ifa_next)
     {
-        if (ifaddrs->ifa_addr->sa_family == AF_INET)
+        if (ifaddr->ifa_addr->sa_family == AF_INET)
         {
             char address_buffer[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &((struct sockaddr_in *)ifaddrs->ifa_addr)->sin_addr, address_buffer, INET_ADDRSTRLEN);
-            switch (bkdr(ifaddrs->ifa_name))
+            inet_ntop(AF_INET, &((struct sockaddr_in *)ifaddr->ifa_addr)->sin_addr, address_buffer, INET_ADDRSTRLEN);
+            switch (bkdr(ifaddr->ifa_name))
             {
             case 0x0DA733A3: // eth0
-                sprintf(buffer, "eth0:%s", address_buffer);
+                sprintf(buffer, "%s:%s", ifaddr->ifa_name, address_buffer);
                 ok = 1;
-                goto ok;
+                break;
             case 0x37721BEE: // wlan0
-                sprintf(buffer, "wlan0:%s", address_buffer);
+                sprintf(buffer, "%s:%s", ifaddr->ifa_name, address_buffer);
                 ok = 1;
-                goto ok;
+                break;
             default:
                 break;
             }
         }
-        ifaddrs = ifaddrs->ifa_next;
     }
-ok:
+    freeifaddrs(ifaddrs);
     return ok;
 }
 
