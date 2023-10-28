@@ -38,6 +38,7 @@
 
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
+#include "log.c/log.h"
 #include "strpool.h"
 #include "main.h"
 #include "i2c.h"
@@ -83,8 +84,6 @@ enum oled_scroll
     OLED_SCROLL_DIAGRIGHT
 };
 
-#define false 0
-#define true !false
 static struct model
 {
     struct strpool str;
@@ -125,6 +124,7 @@ static struct model
         _Bool dimmed;
         _Bool enable;
     } oled;
+    FILE *log;
     uint8_t i2c[3];
     _Bool verbose;
     _Bool get;
@@ -153,6 +153,7 @@ static struct model
         .dimmed = false,
         .enable = true,
     },
+    .log = NULL,
     .i2c = {0, 0, 0},
     .verbose = false,
     .get = false,
@@ -196,32 +197,20 @@ static uint32_t bkdr(void const *const _str)
 static void hat_load_led(void)
 {
     char const *const section = "led";
-    if (hat.verbose)
-    {
-        printf("  [%s]\n", section);
-    }
+    log_debug("  [%s]\n", section);
 
     char buffer[128];
     ini_gets(section, "rgb1", "", buffer, sizeof(buffer), hat.config);
     byte_parse(hat.led.rgb[0], 3, buffer);
-    if (hat.verbose)
-    {
-        printf("  rgb1=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[0][0], hat.led.rgb[0][1], hat.led.rgb[0][2]);
-    }
+    log_debug("  rgb1=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[0][0], hat.led.rgb[0][1], hat.led.rgb[0][2]);
 
     ini_gets(section, "rgb2", "", buffer, sizeof(buffer), hat.config);
     byte_parse(hat.led.rgb[1], 3, buffer);
-    if (hat.verbose)
-    {
-        printf("  rgb2=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[1][0], hat.led.rgb[1][1], hat.led.rgb[1][2]);
-    }
+    log_debug("  rgb2=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[1][0], hat.led.rgb[1][1], hat.led.rgb[1][2]);
 
     ini_gets(section, "rgb3", "", buffer, sizeof(buffer), hat.config);
     byte_parse(hat.led.rgb[2], 3, buffer);
-    if (hat.verbose)
-    {
-        printf("  rgb3=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[2][0], hat.led.rgb[2][1], hat.led.rgb[2][2]);
-    }
+    log_debug("  rgb3=0x%02X,0x%02X,0x%02X\n", hat.led.rgb[2][0], hat.led.rgb[2][1], hat.led.rgb[2][2]);
 
     char const *mode;
     ini_gets(section, "mode", "disable", buffer, sizeof(buffer), hat.config);
@@ -258,10 +247,7 @@ static void hat_load_led(void)
         mode = "disable";
         break;
     }
-    if (hat.verbose)
-    {
-        printf("  mode=%s\n", mode);
-    }
+    log_debug("  mode=%s\n", mode);
 
     char const *speed;
     ini_gets(section, "speed", "middle", buffer, sizeof(buffer), hat.config);
@@ -283,10 +269,7 @@ static void hat_load_led(void)
         speed = "fast";
         break;
     }
-    if (hat.verbose)
-    {
-        printf("  speed=%s\n", speed);
-    }
+    log_debug("  speed=%s\n", speed);
 
     char const *color;
     ini_gets(section, "color", "green", buffer, sizeof(buffer), hat.config);
@@ -328,19 +311,13 @@ static void hat_load_led(void)
         color = "white";
         break;
     }
-    if (hat.verbose)
-    {
-        printf("  color=%s\n", color);
-    }
+    log_debug("  color=%s\n", color);
 }
 
 static void hat_load_fan(void)
 {
     char const *const section = "fan";
-    if (hat.verbose)
-    {
-        printf("  [%s]\n", section);
-    }
+    log_debug("  [%s]\n", section);
 
     char buffer[128];
     char const *mode;
@@ -363,10 +340,7 @@ static void hat_load_fan(void)
         mode = "graded";
         break;
     }
-    if (hat.verbose)
-    {
-        printf("  mode=%s\n", mode);
-    }
+    log_debug("  mode=%s\n", mode);
 
     uint8_t bound;
     char *endptr = buffer;
@@ -399,29 +373,20 @@ static void hat_load_fan(void)
         hat.fan.bound.lower = hat.fan.bound.upper;
         hat.fan.bound.upper = bound;
     }
-    if (hat.verbose)
-    {
-        printf("  bound=%u,%u\n", hat.fan.bound.lower, hat.fan.bound.upper);
-    }
+    log_debug("  bound=%u,%u\n", hat.fan.bound.lower, hat.fan.bound.upper);
 
     hat.fan.speed = (uint8_t)ini_getl(section, "speed", HAT_FAN_SPEED_MAX, hat.config);
     if (hat.fan.speed > HAT_FAN_SPEED_MAX)
     {
         hat.fan.speed = HAT_FAN_SPEED_MAX;
     }
-    if (hat.verbose)
-    {
-        printf("  speed=%u\n", hat.fan.speed);
-    }
+    log_debug("  speed=%u\n", hat.fan.speed);
 }
 
 static void hat_load_oled(void)
 {
     char const *const section = "oled";
-    if (hat.verbose)
-    {
-        printf("  [%s]\n", section);
-    }
+    log_debug("  [%s]\n", section);
 
     char buffer[128];
     char const *scroll;
@@ -454,86 +419,77 @@ static void hat_load_oled(void)
         scroll = "diagright";
         break;
     }
-    if (hat.verbose)
-    {
-        printf("  scroll=%s\n", scroll);
-    }
+    log_debug("  scroll=%s\n", scroll);
 
     hat.oled.invert = (_Bool)ini_getbool(section, "invert", false, hat.config);
-    if (hat.verbose)
-    {
-        printf("  invert=%u\n", hat.oled.invert);
-    }
+    log_debug("  invert=%u\n", hat.oled.invert);
 
     hat.oled.dimmed = (_Bool)ini_getbool(section, "dimmed", false, hat.config);
-    if (hat.verbose)
-    {
-        printf("  dimmed=%u\n", hat.oled.dimmed);
-    }
+    log_debug("  dimmed=%u\n", hat.oled.dimmed);
 
     hat.oled.enable = (_Bool)ini_getbool(section, "enable", true, hat.config);
-    if (hat.verbose)
-    {
-        printf("  enable=%u\n", hat.oled.enable);
-    }
+    log_debug("  enable=%u\n", hat.oled.enable);
+}
+
+static void hat_log0(log_Event *ev)
+{
+    vfprintf(ev->udata, ev->fmt, ev->ap);
+    fflush(ev->udata);
+}
+
+static void hat_log1(log_Event *ev)
+{
+    char buf[64];
+    buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", ev->time)] = '\0';
+    fprintf(ev->udata, "%s %-5s %s:%d: ", buf, log_level_string(ev->level), ev->file, ev->line);
+    vfprintf(ev->udata, ev->fmt, ev->ap);
+    fflush(ev->udata);
 }
 
 static void hat_load(void)
 {
-    {
-        char *prefix = getenv("PREFIX");
-        prefix = prefix ? prefix : "";
-        char *const *config = strpool_putf(&hat.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
-        if (access(*config, R_OK) == 0)
-        {
-            hat.config = *config;
-            goto hat_config;
-        }
-        if (hat.verbose)
-        {
-            printf("Locate: %s\n", *config);
-        }
-        strpool_dump(&hat.str, config);
-    }
-    {
-        char *const *config = strpool_putf(&hat.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
-        if (access(*config, R_OK) == 0)
-        {
-            hat.config = *config;
-            goto hat_config;
-        }
-        if (hat.verbose)
-        {
-            printf("Locate: %s\n", *config);
-        }
-        strpool_dump(&hat.str, config);
-    }
-    {
-        char buffer[PATH_MAX];
-        ssize_t n = readlink("/proc/self/exe", buffer, PATH_MAX);
-        char *const *config = strpool_putf(&hat.str, "%.*s.ini", (int)n, buffer);
-        if (access(*config, R_OK) == 0)
-        {
-            hat.config = *config;
-            goto hat_config;
-        }
-        if (hat.verbose)
-        {
-            printf("Locate: %s\n", *config);
-        }
-        strpool_dump(&hat.str, config);
-    }
-hat_config:
+    log_set_quiet(true);
+    char self[PATH_MAX];
+    int self_n = (int)readlink("/proc/self/exe", self, PATH_MAX);
+    char *prefix = getenv("PREFIX");
+    prefix = prefix ? prefix : "";
+
+    log_add_callback(hat_log0, stderr, LOG_ERROR);
     if (hat.verbose)
     {
-        if (access(hat.config, R_OK) == 0)
+        log_add_callback(hat_log0, stdout, LOG_DEBUG);
+    }
+    {
+        char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/var/log/" HAT_LOG);
+        hat.log = fopen(*log, "ab");
+        if (hat.log)
         {
-            printf("Config: %s\n", hat.config);
+            goto hat_log;
         }
-        else
+        strpool_dump(&hat.str, log);
+    }
+    {
+        char *const *log = strpool_putf(&hat.str, "%.*s.log", self_n, self);
+        hat.log = fopen(*log, "ab");
+        if (hat.log)
         {
-            printf("Config:\n");
+            goto hat_log;
         }
+        strpool_dump(&hat.str, log);
+    }
+    {
+        char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/tmp/" HAT_LOG);
+        hat.log = fopen(*log, "ab");
+        if (hat.log)
+        {
+            goto hat_log;
+        }
+        strpool_dump(&hat.str, log);
+    }
+hat_log:
+    if (hat.log)
+    {
+        log_add_callback(hat_log1, hat.log, LOG_TRACE);
     }
 
     int fd = open("/proc/device-tree/model", O_RDONLY);
@@ -559,16 +515,50 @@ hat_config:
             hat.fan.bound.lower = 45;
         }
     close:
-        if (hat.verbose)
-        {
-            printf("Model: %s\n", buffer);
-        }
+        log_debug("Model: %s\n", buffer);
         close(fd);
     }
-    if (hat.verbose)
+
     {
-        putchar('\n');
+        char *const *config = strpool_putf(&hat.str, "%s%s", prefix, "/etc/" HAT_CONFIG);
+        if (access(*config, R_OK) == 0)
+        {
+            hat.config = *config;
+            goto hat_config;
+        }
+        log_debug("Locate: %s\n", *config);
+        strpool_dump(&hat.str, config);
     }
+    {
+        char *const *config = strpool_putf(&hat.str, "%s/.%s", getenv("HOME"), HAT_CONFIG);
+        if (access(*config, R_OK) == 0)
+        {
+            hat.config = *config;
+            goto hat_config;
+        }
+        log_debug("Locate: %s\n", *config);
+        strpool_dump(&hat.str, config);
+    }
+    {
+        char *const *config = strpool_putf(&hat.str, "%.*s.ini", self_n, self);
+        if (access(*config, R_OK) == 0)
+        {
+            hat.config = *config;
+            goto hat_config;
+        }
+        log_debug("Locate: %s\n", *config);
+        strpool_dump(&hat.str, config);
+    }
+hat_config:
+    if (access(hat.config, R_OK) == 0)
+    {
+        log_debug("Config: %s\n", hat.config);
+    }
+    else
+    {
+        log_debug("Config:\n");
+    }
+    log_debug("\n");
 
     char buffer[128];
     ini_gets("", "i2c", HAT_DEV_I2C, buffer, sizeof(buffer), hat.config);
@@ -578,10 +568,7 @@ hat_config:
         long line = strtol(buffer, &endptr, 0);
         sprintf(buffer, "/dev/i2c-%li", line);
     }
-    if (hat.verbose)
-    {
-        printf("  i2c=%s\n", buffer);
-    }
+    log_debug("  i2c=%s\n", buffer);
     extern int i2cd;
     i2cd = open(buffer, O_RDWR);
     hat.i2cd = i2cd;
@@ -591,18 +578,12 @@ hat_config:
     {
         hat.sleep = HAT_SLEEP_MIN;
     }
-    if (hat.verbose)
-    {
-        printf("  sleep=%i\n", hat.sleep);
-    }
+    log_debug("  sleep=%i\n", hat.sleep);
 
     hat_load_led();
     hat_load_fan();
     hat_load_oled();
-    if (hat.verbose)
-    {
-        putchar('\n');
-    }
+    log_debug("\n");
 }
 
 static long cpu_get_temp(void)
@@ -700,10 +681,10 @@ static void hat_init(void)
 {
     if (hat.i2cd < 0)
     {
-        fprintf(stderr, "Failed to initialize I2C!\n");
+        int color = isatty(STDERR_FILENO);
+        fprintf(stderr, "%sFailed to initialize I2C!%s\n", color ? "\033[31m" : "", color ? "\033[0m" : "");
         exit(EXIT_FAILURE);
     }
-    ioctl(hat.i2cd, I2C_RETRIES, 5);
     if (hat.get)
     {
         i2c_read(hat.i2cd, hat.i2c[0], hat.i2c[1], hat.i2c + 2);
@@ -821,24 +802,27 @@ static void hat_idle(void)
 
 static void hat_exit(void)
 {
-    if (hat.verbose && isatty(STDOUT_FILENO) == 0)
     {
         size_t i = 0;
-        printf("String: 0x%zX\n", hat.str.num + hat.str.pool.num);
+        log_trace("String: 0x%zX\n", hat.str.num + hat.str.pool.num);
         if (hat.str.num)
         {
-            putchar('\n');
+            log_trace("\n");
         }
         strpool_pool_foreach(&hat.str, cur)
         {
-            printf("[%zu]=%s\n", i++, *cur);
+            log_trace("[%zu]=%s\n", i++, *cur);
         }
         strpool_foreach(&hat.str, cur)
         {
-            printf("[%zu]=%s\n", i++, *cur);
+            log_trace("[%zu]=%s\n", i++, *cur);
         }
     }
     strpool_exit(&hat.str);
+    if (hat.log)
+    {
+        fclose(hat.log);
+    }
 }
 
 int main(int argc, char *argv[])

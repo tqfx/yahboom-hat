@@ -21,17 +21,10 @@
 
 #define HAT_I2C_ADDR 0x0D
 #define HAT_CONFIG "yahboom-hat.ini"
+#define HAT_LOG "yahboom-hat.log"
 #define HAT_DEV_I2C "/dev/i2c-0"
 #define HAT_CPU_TEMP "/sys/class/thermal/thermal_zone0/temp"
 #define HAT_CPU_USAGE "/proc/stat"
 #define HAT_DISK_ROOT "/"
-
-#if defined(__cplusplus)
-extern "C" {
-#endif /* __cplusplus */
-
-#if defined(__cplusplus)
-} /* extern "C" */
-#endif /* __cplusplus */
 
 #endif /* main.h */
