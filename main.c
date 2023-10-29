@@ -34,6 +34,7 @@
 #include <sys/ioctl.h>
 #include <sys/vfs.h>
 #include <unistd.h>
+#include <signal.h>
 #include <getopt.h>
 
 #include "minIni/minIni.h"
@@ -90,6 +91,7 @@ static struct model
     char const *config;
 #define HAT_SLEEP_MIN 1
     unsigned int sleep;
+    void (*term)(int);
     int i2cd;
     struct
     {
@@ -133,6 +135,7 @@ static struct model
     .str = STRPOOL_INIT,
     .config = HAT_CONFIG,
     .sleep = HAT_SLEEP_MIN,
+    .term = NULL,
     .i2cd = 0,
     .cpu = {.temp = 0, .idle = 0, .total = 0, .usage = 0},
     .led = {
@@ -448,17 +451,18 @@ static void hat_log1(log_Event *ev)
 
 static void hat_load(void)
 {
-    log_set_quiet(true);
     char self[PATH_MAX];
     int self_n = (int)readlink("/proc/self/exe", self, PATH_MAX);
     char *prefix = getenv("PREFIX");
     prefix = prefix ? prefix : "";
 
+    log_set_quiet(true);
     log_add_callback(hat_log0, stderr, LOG_ERROR);
     if (hat.verbose)
     {
         log_add_callback(hat_log0, stdout, LOG_DEBUG);
     }
+    strpool_init(&hat.str, NULL, 0);
     {
         char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/var/log/" HAT_LOG);
         hat.log = fopen(*log, "ab");
@@ -825,6 +829,12 @@ static void hat_exit(void)
     }
 }
 
+static void hat_term(int sig)
+{
+    hat_exit();
+    hat.term(sig);
+}
+
 int main(int argc, char *argv[])
 {
     char const *shortopts = "c:vh";
@@ -868,7 +878,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    strpool_init(&hat.str, NULL, 0);
+    hat.term = signal(SIGTERM, hat_term);
     atexit(hat_exit);
     hat_load();
 
