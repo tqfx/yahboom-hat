@@ -39,11 +39,48 @@
 
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
-#include "log.c/log.h"
 #include "strpool.h"
 #include "main.h"
+#include "log.h"
 #include "i2c.h"
 #include "rgb.h"
+
+enum
+{
+    LOG_TRACE,
+    LOG_DEBUG,
+    LOG_ERROR,
+    LOG_FATAL
+};
+#define log_trace(...) log_exec(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__)
+#define log_debug(...) log_exec(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define log_error(...) log_exec(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
+#define log_fatal(...) log_exec(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__)
+static char const *level_strings[] = {"TRACE", "DEBUG", "ERROR", "FATAL"};
+static void log_exec_file(struct log_node const *log, char const *fmt, va_list ap)
+{
+    char buf[64];
+    buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", log->time)] = '\0';
+    fprintf(log->data, "%s %-5s %s:%d: ", buf, level_strings[log->level], log->file, log->line);
+    vfprintf(log->data, fmt, ap);
+    fflush(log->data);
+}
+static char const *level_colors[] = {"\x1b[94m", "\x1b[36m", "\x1b[31m", "\x1b[35m"};
+static void log_exec_pipe(struct log_node const *log, char const *fmt, va_list ap)
+{
+    char buf[16];
+    int tty = isatty(fileno(log->data));
+    char const *white = tty ? "\x1b[0m" : "";
+    buf[strftime(buf, sizeof(buf), "%H:%M:%S", log->time)] = '\0';
+    fprintf(log->data, "%s %s%-5s%s %s%s:%d:%s ", buf,
+            tty ? level_colors[log->level] : "", level_strings[log->level],
+            white, tty ? "\x1b[90m" : "", log->file, log->line, white);
+    vfprintf(log->data, fmt, ap);
+}
+static int log_is_1(unsigned int level, unsigned int lvl)
+{
+    return log_isge(level, lvl) && log_islt(level, LOG_ERROR);
+}
 
 enum led_mode
 {
@@ -85,6 +122,8 @@ enum oled_scroll
     OLED_SCROLL_DIAGRIGHT
 };
 
+#define false 0
+#define true !false
 static struct model
 {
     struct strpool str;
@@ -126,7 +165,12 @@ static struct model
         _Bool dimmed;
         _Bool enable;
     } oled;
-    FILE *log;
+    struct
+    {
+        struct log_node out;
+        struct log_node err;
+        struct log_node log;
+    } log;
     uint8_t i2c[3];
     _Bool verbose;
     _Bool get;
@@ -156,7 +200,11 @@ static struct model
         .dimmed = false,
         .enable = true,
     },
-    .log = NULL,
+    .log = {
+        .out = LOG_INIT(log_is_1, LOG_DEBUG, log_exec_pipe, NULL),
+        .err = LOG_INIT(log_isge, LOG_ERROR, log_exec_pipe, NULL),
+        .log = LOG_INIT(log_isge, LOG_TRACE, log_exec_file, NULL),
+    },
     .i2c = {0, 0, 0},
     .verbose = false,
     .get = false,
@@ -434,21 +482,6 @@ static void hat_load_oled(void)
     log_debug("  enable=%u\n", hat.oled.enable);
 }
 
-static void hat_log0(log_Event *ev)
-{
-    vfprintf(ev->udata, ev->fmt, ev->ap);
-    fflush(ev->udata);
-}
-
-static void hat_log1(log_Event *ev)
-{
-    char buf[64];
-    buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", ev->time)] = '\0';
-    fprintf(ev->udata, "%s %-5s %s:%d: ", buf, log_level_string(ev->level), ev->file, ev->line);
-    vfprintf(ev->udata, ev->fmt, ev->ap);
-    fflush(ev->udata);
-}
-
 static void hat_load(void)
 {
     char self[PATH_MAX];
@@ -456,17 +489,18 @@ static void hat_load(void)
     char *prefix = getenv("PREFIX");
     prefix = prefix ? prefix : "";
 
-    log_set_quiet(true);
-    log_add_callback(hat_log0, stderr, LOG_ERROR);
+    hat.log.err.data = stderr;
+    log_join(&hat.log.err);
     if (hat.verbose)
     {
-        log_add_callback(hat_log0, stdout, LOG_DEBUG);
+        hat.log.out.data = stdout;
+        log_join(&hat.log.out);
     }
     strpool_init(&hat.str, NULL, 0);
     {
         char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/var/log/" HAT_LOG);
-        hat.log = fopen(*log, "ab");
-        if (hat.log)
+        hat.log.log.data = fopen(*log, "a");
+        if (hat.log.log.data)
         {
             goto hat_log;
         }
@@ -474,8 +508,8 @@ static void hat_load(void)
     }
     {
         char *const *log = strpool_putf(&hat.str, "%.*s.log", self_n, self);
-        hat.log = fopen(*log, "ab");
-        if (hat.log)
+        hat.log.log.data = fopen(*log, "a");
+        if (hat.log.log.data)
         {
             goto hat_log;
         }
@@ -483,17 +517,17 @@ static void hat_load(void)
     }
     {
         char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/tmp/" HAT_LOG);
-        hat.log = fopen(*log, "ab");
-        if (hat.log)
+        hat.log.log.data = fopen(*log, "a");
+        if (hat.log.log.data)
         {
             goto hat_log;
         }
         strpool_dump(&hat.str, log);
     }
 hat_log:
-    if (hat.log)
+    if (hat.log.log.data)
     {
-        log_add_callback(hat_log1, hat.log, LOG_TRACE);
+        log_join(&hat.log.log);
     }
 
     int fd = open("/proc/device-tree/model", O_RDONLY);
@@ -685,8 +719,7 @@ static void hat_init(void)
 {
     if (hat.i2cd < 0)
     {
-        int color = isatty(STDERR_FILENO);
-        fprintf(stderr, "%sFailed to initialize I2C!%s\n", color ? "\033[31m" : "", color ? "\033[0m" : "");
+        log_error("Failed to initialize I2C!\n");
         exit(EXIT_FAILURE);
     }
     if (hat.get)
@@ -823,9 +856,9 @@ static void hat_exit(void)
         }
     }
     strpool_exit(&hat.str);
-    if (hat.log)
+    if (hat.log.log.data)
     {
-        fclose(hat.log);
+        fclose(hat.log.log.data);
     }
 }
 
