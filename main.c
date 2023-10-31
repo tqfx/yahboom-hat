@@ -37,11 +37,14 @@
 #include <signal.h>
 #include <getopt.h>
 
+#define LOG_USE_TIME
+#define LOG_USE_USEC
+#include "log.c"
+
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
 #include "strpool.h"
 #include "main.h"
-#include "log.h"
 #include "i2c.h"
 #include "rgb.h"
 
@@ -49,30 +52,28 @@ enum
 {
     LOG_TRACE,
     LOG_DEBUG,
-    LOG_ERROR,
-    LOG_FATAL
+    LOG_ERROR
 };
-#define log_trace(...) log_exec(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__)
-#define log_debug(...) log_exec(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define log_error(...) log_exec(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define log_fatal(...) log_exec(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__)
-static char const *level_strings[] = {"TRACE", "DEBUG", "ERROR", "FATAL"};
-static void log_exec_file(struct log_node const *log, char const *fmt, va_list ap)
+#define log_trace(...) log_log(LOG_TRACE, __VA_ARGS__)
+#define log_debug(...) log_log(LOG_DEBUG, __VA_ARGS__)
+#define log_error(...) log_log(LOG_ERROR, __VA_ARGS__)
+static char const *level_strings[] = {"TRACE", "DEBUG", "ERROR"};
+static void log_impl_file(struct log_node const *log, char const *fmt, va_list ap)
 {
     char buf[64];
     buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", log->time)] = '\0';
-    fprintf(log->data, "%s %-5s %s:%d: ", buf, level_strings[log->level], log->file, log->line);
+    fprintf(log->data, "%s.%06lu %-5s %s:%d: ", buf, log->usec, level_strings[log->level], log->file, log->line);
     vfprintf(log->data, fmt, ap);
     fflush(log->data);
 }
-static char const *level_colors[] = {"\x1b[94m", "\x1b[36m", "\x1b[31m", "\x1b[35m"};
-static void log_exec_pipe(struct log_node const *log, char const *fmt, va_list ap)
+static char const *level_colors[] = {"\x1b[94m", "\x1b[36m", "\x1b[31m"};
+static void log_impl_pipe(struct log_node const *log, char const *fmt, va_list ap)
 {
     char buf[16];
     int tty = isatty(fileno(log->data));
     char const *white = tty ? "\x1b[0m" : "";
     buf[strftime(buf, sizeof(buf), "%H:%M:%S", log->time)] = '\0';
-    fprintf(log->data, "%s %s%-5s%s %s%s:%d:%s ", buf,
+    fprintf(log->data, "%s.%06lu %s%-5s%s %s%s:%d:%s ", buf, log->usec,
             tty ? level_colors[log->level] : "", level_strings[log->level],
             white, tty ? "\x1b[90m" : "", log->file, log->line, white);
     vfprintf(log->data, fmt, ap);
@@ -201,9 +202,9 @@ static struct model
         .enable = true,
     },
     .log = {
-        .out = LOG_INIT(log_is_1, LOG_DEBUG, log_exec_pipe, NULL),
-        .err = LOG_INIT(log_isge, LOG_ERROR, log_exec_pipe, NULL),
-        .log = LOG_INIT(log_isge, LOG_TRACE, log_exec_file, NULL),
+        .out = LOG_INIT(log_is_1, LOG_DEBUG, log_impl_pipe, NULL),
+        .err = LOG_INIT(log_isge, LOG_ERROR, log_impl_pipe, NULL),
+        .log = LOG_INIT(log_isge, LOG_TRACE, log_impl_file, NULL),
     },
     .i2c = {0, 0, 0},
     .verbose = false,

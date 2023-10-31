@@ -1,5 +1,5 @@
-#ifndef STRPOOL_H
-#define STRPOOL_H 0x20231025
+#ifndef STRPOOL_VERSION
+#define STRPOOL_VERSION 0x20231029
 
 #include <stddef.h>
 #include <stdarg.h>
@@ -57,12 +57,12 @@ char *const *strpool_find(struct strpool const *ctx, char const *str);
 char *const *strpool_puts(struct strpool *ctx, char const *str);
 char *const *strpool_putn(struct strpool *ctx, void const *ptr, size_t num);
 char *const *strpool_putv(struct strpool *ctx, char const *fmt, va_list va)
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
     __attribute__((__format__(__printf__, 2, 0)))
-#endif /* __GNUC__ */
+#endif
     ;
 char *const *strpool_putf(struct strpool *ctx, char const *fmt, ...)
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
     __attribute__((__format__(__printf__, 2, 3)))
 #endif /* __GNUC__ */
     ;
