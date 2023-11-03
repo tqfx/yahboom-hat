@@ -39,6 +39,7 @@
 
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
+#include "timeslice.h"
 #include "strpool.h"
 #include "main.h"
 #include "i2c.h"
@@ -131,8 +132,6 @@ static struct model
 {
     struct strpool str;
     char const *config;
-#define HAT_SLEEP_MIN 1
-    unsigned int sleep;
     void (*term)(int);
     int i2cd;
     struct
@@ -150,6 +149,7 @@ static struct model
     } led;
     struct
     {
+        timeslice_s task;
 #define HAT_FAN_BOUND_MAX 65
         struct
         {
@@ -160,9 +160,14 @@ static struct model
         uint8_t current_speed;
         uint8_t speed;
         enum fan_mode mode;
+#define HAT_FAN_SLEEP_MIN 1
+        unsigned int sleep;
     } fan;
     struct
     {
+        timeslice_s task;
+#define HAT_OLED_SLEEP_MIN 1
+        unsigned int sleep;
         enum oled_scroll scroll;
         _Bool invert;
         _Bool dimmed;
@@ -176,7 +181,6 @@ static struct model
 } hat = {
     .str = STRPOOL_INIT,
     .config = HAT_CONFIG,
-    .sleep = HAT_SLEEP_MIN,
     .term = NULL,
     .i2cd = 0,
     .cpu = {.temp = 0, .idle = 0, .total = 0, .usage = 0},
@@ -191,12 +195,14 @@ static struct model
         .current_speed = 0,
         .speed = HAT_FAN_SPEED_MAX,
         .mode = FAN_MODE_SIGNLE,
+        .sleep = HAT_FAN_SLEEP_MIN,
     },
     .oled = {
         .scroll = OLED_SCROLL_STOP,
         .invert = false,
         .dimmed = false,
         .enable = true,
+        .sleep = HAT_OLED_SLEEP_MIN,
     },
     .log = NULL,
     .i2c = {0, 0, 0},
@@ -426,12 +432,26 @@ static void hat_load_fan(void)
         hat.fan.speed = HAT_FAN_SPEED_MAX;
     }
     log_debug("  speed=%u\n", hat.fan.speed);
+
+    hat.fan.sleep = (unsigned int)ini_getl(section, "sleep", HAT_FAN_SLEEP_MIN, hat.config);
+    if (hat.fan.sleep < HAT_FAN_SLEEP_MIN)
+    {
+        hat.fan.sleep = HAT_FAN_SLEEP_MIN;
+    }
+    log_debug("  sleep=%i\n", hat.fan.sleep);
 }
 
 static void hat_load_oled(void)
 {
     char const *const section = "oled";
     log_debug("  [%s]\n", section);
+
+    hat.oled.sleep = (unsigned int)ini_getl(section, "sleep", HAT_OLED_SLEEP_MIN, hat.config);
+    if (hat.oled.sleep < HAT_OLED_SLEEP_MIN)
+    {
+        hat.oled.sleep = HAT_OLED_SLEEP_MIN;
+    }
+    log_debug("  sleep=%i\n", hat.oled.sleep);
 
     char buffer[128];
     char const *scroll;
@@ -603,13 +623,6 @@ hat_config:
     i2cd = open(buffer, O_RDWR);
     hat.i2cd = i2cd;
 
-    hat.sleep = (unsigned)ini_getl("", "sleep", HAT_SLEEP_MIN, hat.config);
-    if (hat.sleep < HAT_SLEEP_MIN)
-    {
-        hat.sleep = HAT_SLEEP_MIN;
-    }
-    log_debug("  sleep=%i\n", hat.sleep);
-
     hat_load_led();
     hat_load_fan();
     hat_load_oled();
@@ -707,6 +720,8 @@ static int get_ip(char *buffer)
     return ok;
 }
 
+static TIMESLICE_EXEC(exec_fan, );
+static TIMESLICE_EXEC(exec_oled, );
 static void hat_init(void)
 {
     if (hat.i2cd < 0)
@@ -731,6 +746,8 @@ static void hat_init(void)
     }
     hat.fan.current_speed = hat.fan.speed;
     rgb_fan(hat.i2cd, hat.fan.speed);
+    timeslice_cron(&hat.fan.task, exec_fan, 0, hat.fan.sleep);
+    timeslice_join(&hat.fan.task);
     ssd1306_begin(SSD1306_SWITCHCAPVCC);
     switch (hat.oled.scroll)
     {
@@ -761,22 +778,14 @@ static void hat_init(void)
     }
     ssd1306_clearDisplay();
     ssd1306_display();
+    timeslice_cron(&hat.oled.task, exec_oled, 0, hat.oled.sleep);
+    timeslice_join(&hat.oled.task);
 }
 
-static void hat_exec(void)
+static TIMESLICE_EXEC(exec_fan, argv)
 {
     hat.cpu.temp = cpu_get_temp();
     hat.cpu.usage = cpu_get_usage();
-    if (hat.led.mode == LED_MODE_DISABLE)
-    {
-        rgb_off(hat.i2cd);
-    }
-    else
-    {
-        rgb_effect(hat.i2cd, hat.led.mode);
-        rgb_speed(hat.i2cd, hat.led.speed);
-        rgb_color(hat.i2cd, hat.led.color);
-    }
     unsigned char speed = hat.fan.current_speed;
     if (hat.fan.mode != FAN_MODE_DIRECT)
     {
@@ -806,6 +815,21 @@ static void hat_exec(void)
     {
         rgb_fan(hat.i2cd, speed);
     }
+    if (hat.led.mode == LED_MODE_DISABLE)
+    {
+        rgb_off(hat.i2cd);
+    }
+    else
+    {
+        rgb_effect(hat.i2cd, hat.led.mode);
+        rgb_speed(hat.i2cd, hat.led.speed);
+        rgb_color(hat.i2cd, hat.led.color);
+    }
+    (void)(argv);
+}
+
+static TIMESLICE_EXEC(exec_oled, argv)
+{
     if (hat.oled.enable)
     {
         char buffer[64];
@@ -822,11 +846,7 @@ static void hat_exec(void)
         ssd1306_drawText(0, 24, buffer);
         ssd1306_display();
     }
-}
-
-static void hat_idle(void)
-{
-    sleep(hat.sleep);
+    (void)(argv);
 }
 
 static void hat_exit(void)
@@ -903,8 +923,9 @@ int main(int argc, char *argv[])
     atexit(hat_exit);
     hat_load();
 
-    for (hat_init();; hat_idle())
+    for (hat_init();; sleep(1))
     {
-        hat_exec();
+        timeslice_tick();
+        timeslice_exec();
     }
 }

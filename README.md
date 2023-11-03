@@ -41,7 +41,6 @@ Options:
 
 ```ini
 i2c=/dev/i2c-0
-sleep=1 # unit(s)
 [led]
 rgb1=0,0,0 # 0,0,0 ~ 0xFF,0xFF,0xFF
 rgb2=0,0,0 # 0,0,0 ~ 0xFF,0xFF,0xFF
@@ -50,10 +49,12 @@ mode=disable # disable water breathing marquee rainbow colorful
 speed=middle # slow middle fast
 color=green # red green blue yellow purple cyan white
 [fan]
+sleep=1 # unit(s)
 mode=single # direct single graded
 bound=42,60 # lower,upper or upper,lower
 speed=9 # 0~9
 [oled]
+sleep=2 # unit(s)
 scroll=stop # stop left right diagleft diagright
 invert=0 # bool
 dimmed=0 # bool
