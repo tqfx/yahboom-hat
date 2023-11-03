@@ -37,10 +37,6 @@
 #include <signal.h>
 #include <getopt.h>
 
-#define LOG_USE_TIME
-#define LOG_USE_USEC
-#include "log.c"
-
 #include "minIni/minIni.h"
 #include "ssd1306_i2c.h"
 #include "strpool.h"
@@ -48,6 +44,10 @@
 #include "i2c.h"
 #include "rgb.h"
 
+#define LOG_NODE_MAX 3
+#define LOG_USE_TIME
+#define LOG_USE_USEC
+#include "log.c"
 enum
 {
     LOG_TRACE,
@@ -58,27 +58,29 @@ enum
 #define log_debug(...) log_log(LOG_DEBUG, __VA_ARGS__)
 #define log_error(...) log_log(LOG_ERROR, __VA_ARGS__)
 static char const *level_strings[] = {"TRACE", "DEBUG", "ERROR"};
-static void log_impl_file(struct log_node const *log, char const *fmt, va_list ap)
+static LOG_IMPL_DEF(log_impl_file, ctx, fmt, ap);
+static LOG_IMPL(log_impl_file, ctx, fmt, ap)
 {
     char buf[64];
-    buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", log->time)] = '\0';
-    fprintf(log->data, "%s.%06lu %-5s %s:%d: ", buf, log->usec, level_strings[log->level], log->file, log->line);
-    vfprintf(log->data, fmt, ap);
-    fflush(log->data);
+    buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", ctx->time)] = '\0';
+    fprintf(ctx->data, "%s.%06lu %-5s %s:%d: ", buf, ctx->usec, level_strings[ctx->level], ctx->file, ctx->line);
+    vfprintf(ctx->data, fmt, ap);
+    fflush(ctx->data);
 }
 static char const *level_colors[] = {"\x1b[94m", "\x1b[36m", "\x1b[31m"};
-static void log_impl_pipe(struct log_node const *log, char const *fmt, va_list ap)
+static LOG_IMPL_DEF(log_impl_pipe, ctx, fmt, ap);
+static LOG_IMPL(log_impl_pipe, ctx, fmt, ap)
 {
     char buf[16];
-    int tty = isatty(fileno(log->data));
+    int tty = isatty(fileno(ctx->data));
     char const *white = tty ? "\x1b[0m" : "";
-    buf[strftime(buf, sizeof(buf), "%H:%M:%S", log->time)] = '\0';
-    fprintf(log->data, "%s.%06lu %s%-5s%s %s%s:%d:%s ", buf, log->usec,
-            tty ? level_colors[log->level] : "", level_strings[log->level],
-            white, tty ? "\x1b[90m" : "", log->file, log->line, white);
-    vfprintf(log->data, fmt, ap);
+    buf[strftime(buf, sizeof(buf), "%H:%M:%S", ctx->time)] = '\0';
+    fprintf(ctx->data, "%s.%06lu %s%-5s%s %s%s:%d:%s ", buf, ctx->usec,
+            tty ? level_colors[ctx->level] : "", level_strings[ctx->level],
+            white, tty ? "\x1b[90m" : "", ctx->file, ctx->line, white);
+    vfprintf(ctx->data, fmt, ap);
 }
-static int log_is_1(unsigned int level, unsigned int lvl)
+static LOG_ISOK(log_is_1, level, lvl)
 {
     return log_isge(level, lvl) && log_islt(level, LOG_ERROR);
 }
@@ -166,12 +168,7 @@ static struct model
         _Bool dimmed;
         _Bool enable;
     } oled;
-    struct
-    {
-        struct log_node out;
-        struct log_node err;
-        struct log_node log;
-    } log;
+    FILE *log;
     uint8_t i2c[3];
     _Bool verbose;
     _Bool get;
@@ -201,11 +198,7 @@ static struct model
         .dimmed = false,
         .enable = true,
     },
-    .log = {
-        .out = LOG_INIT(log_is_1, LOG_DEBUG, log_impl_pipe, NULL),
-        .err = LOG_INIT(log_isge, LOG_ERROR, log_impl_pipe, NULL),
-        .log = LOG_INIT(log_isge, LOG_TRACE, log_impl_file, NULL),
-    },
+    .log = NULL,
     .i2c = {0, 0, 0},
     .verbose = false,
     .get = false,
@@ -490,18 +483,16 @@ static void hat_load(void)
     char *prefix = getenv("PREFIX");
     prefix = prefix ? prefix : "";
 
-    hat.log.err.data = stderr;
-    log_join(&hat.log.err);
+    log_join(log_isge, LOG_ERROR, log_impl_pipe, stderr);
     if (hat.verbose)
     {
-        hat.log.out.data = stdout;
-        log_join(&hat.log.out);
+        log_join(log_is_1, LOG_DEBUG, log_impl_pipe, stdout);
     }
     strpool_init(&hat.str, NULL, 0);
     {
         char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/var/log/" HAT_LOG);
-        hat.log.log.data = fopen(*log, "a");
-        if (hat.log.log.data)
+        hat.log = fopen(*log, "a");
+        if (hat.log)
         {
             goto hat_log;
         }
@@ -509,8 +500,8 @@ static void hat_load(void)
     }
     {
         char *const *log = strpool_putf(&hat.str, "%.*s.log", self_n, self);
-        hat.log.log.data = fopen(*log, "a");
-        if (hat.log.log.data)
+        hat.log = fopen(*log, "a");
+        if (hat.log)
         {
             goto hat_log;
         }
@@ -518,17 +509,17 @@ static void hat_load(void)
     }
     {
         char *const *log = strpool_putf(&hat.str, "%s%s", prefix, "/tmp/" HAT_LOG);
-        hat.log.log.data = fopen(*log, "a");
-        if (hat.log.log.data)
+        hat.log = fopen(*log, "a");
+        if (hat.log)
         {
             goto hat_log;
         }
         strpool_dump(&hat.str, log);
     }
 hat_log:
-    if (hat.log.log.data)
+    if (hat.log)
     {
-        log_join(&hat.log.log);
+        log_join(log_isge, LOG_TRACE, log_impl_file, hat.log);
     }
 
     int fd = open("/proc/device-tree/model", O_RDONLY);
@@ -843,10 +834,6 @@ static void hat_exit(void)
     {
         size_t i = 0;
         log_trace("String: 0x%zX\n", hat.str.num + hat.str.pool.num);
-        if (hat.str.num)
-        {
-            log_trace("\n");
-        }
         strpool_pool_foreach(&hat.str, cur)
         {
             log_trace("[%zu]=%s\n", i++, *cur);
@@ -857,9 +844,9 @@ static void hat_exit(void)
         }
     }
     strpool_exit(&hat.str);
-    if (hat.log.log.data)
+    if (hat.log)
     {
-        fclose(hat.log.log.data);
+        fclose(hat.log);
     }
 }
 

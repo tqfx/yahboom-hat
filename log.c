@@ -1,88 +1,67 @@
 #include "log.h"
 
-static struct log_root
+#if !defined LOG_NODE_MAX || (LOG_NODE_MAX + 0 < 1)
+#undef LOG_NODE_MAX
+#define LOG_NODE_MAX 1
+#endif /* LOG_NODE_MAX */
+
+struct log_node
 {
-    struct log_node *head;
-    struct log_node *tail;
-    void (*lock)(void *, int);
+    LOG_ISOK((*isok), , );
+    LOG_IMPL((*impl), , , );
     void *data;
-#if defined(LOG_USE_TIME)
-    struct tm tm;
-    time_t time;
-#endif /* LOG_USE_TIME */
-} log = {
-    NULL,
-    (struct log_node *)&log.head,
-    NULL,
-    NULL,
-#if defined(LOG_USE_TIME)
-    {0},
-    0,
-#endif /* LOG_USE_TIME */
+    int level;
+    int flags;
 };
 
-int log_islt(unsigned int level, unsigned int lvl) { return level < lvl; }
-int log_isgt(unsigned int level, unsigned int lvl) { return level > lvl; }
-int log_isle(unsigned int level, unsigned int lvl) { return level <= lvl; }
-int log_isge(unsigned int level, unsigned int lvl) { return level >= lvl; }
-int log_iseq(unsigned int level, unsigned int lvl) { return level == lvl; }
-int log_isne(unsigned int level, unsigned int lvl) { return level != lvl; }
-
-void log_lock(void (*lock)(void *, int), void *data)
+static struct log_head
 {
-    log.lock = lock;
-    log.data = data;
-}
-
-void log_init(struct log_node *_log, int (*isok)(unsigned int, unsigned int), unsigned int level,
-              void (*impl)(struct log_node const *, char const *, va_list ap), void *data)
-{
-    _log->isok = isok;
-    _log->level = level;
-    _log->impl = impl;
-    _log->data = data;
-}
-
-void log_join(struct log_node *_log)
-{
-    if (log.lock)
-    {
-        log.lock(log.data, 1);
-    }
+#if defined(LOG_USE_LOCK)
+    LOG_LOCK((*lock), , );
+    void *data;
+#endif /* LOG_USE_LOCK */
 #if defined(LOG_USE_TIME)
-    _log->time = &log.tm;
+    time_t time;
+    struct tm tm;
 #endif /* LOG_USE_TIME */
-    _log->next = NULL;
-    log.tail->next = _log;
-    log.tail = _log;
-    if (log.lock)
-    {
-        log.lock(log.data, 0);
-    }
-}
+    struct log_node node[LOG_NODE_MAX];
+} log_ = {
+#if defined(LOG_USE_LOCK)
+    NULL,
+    NULL,
+#endif /* LOG_USE_LOCK */
+#if defined(LOG_USE_TIME)
+    0,
+    {0},
+#endif /* LOG_USE_TIME */
+    {{0}},
+};
 
-void log_drop(struct log_node *_log)
+LOG_ISOK(log_islt, level, lvl) { return level < lvl; }
+LOG_ISOK(log_isgt, level, lvl) { return level > lvl; }
+LOG_ISOK(log_isle, level, lvl) { return level <= lvl; }
+LOG_ISOK(log_isge, level, lvl) { return level >= lvl; }
+LOG_ISOK(log_iseq, level, lvl) { return level == lvl; }
+LOG_ISOK(log_isne, level, lvl) { return level != lvl; }
+
+int log_join(LOG_ISOK((*isok), , ), int level, LOG_IMPL((*impl), , , ), void *data)
 {
-    if (log.lock)
+    int ok = ~0;
+    for (unsigned int i = 0; i < LOG_NODE_MAX; ++i)
     {
-        log.lock(log.data, 1);
-    }
-    for (struct log_node *cur = (struct log_node *)&log.head; cur->next; cur = cur->next)
-    {
-        if (cur->next == _log)
+        struct log_node *log = (struct log_node *)(log_.node + i);
+        if (!log->flags)
         {
-            cur->next = _log->next;
-            if (!cur->next)
-            {
-                log.tail = cur;
-            }
+            log->isok = isok;
+            log->impl = impl;
+            log->data = data;
+            log->level = level;
+            log->flags = 1;
+            ok = 0;
             break;
         }
     }
-    if (log.lock)
-    {
-        log.lock(log.data, 0);
-    }
+    return ok;
 }
 
 #if defined(_WIN32)
@@ -134,8 +113,9 @@ static inline int GetTimeOfDay(struct TimeVal *tv, void *tz)
 #endif /* LOG_USE_THREAD */
 #endif /* _WIN32 */
 
-void log_impl(unsigned int level, char const *file, unsigned int line, char const *fmt, ...)
+void log_impl(char const *file, unsigned int line, int level, char const *fmt, ...)
 {
+    log_t ctx;
 #if defined(LOG_USE_TIME)
 #if defined(LOG_USE_USEC) || \
     defined(LOG_USE_MSEC)
@@ -143,104 +123,97 @@ void log_impl(unsigned int level, char const *file, unsigned int line, char cons
 #else /* !LOG_USE_USEC */
     time_t sec;
 #endif /* LOG_USE_USEC */
-#if defined(LOG_USE_USEC)
-    unsigned long usec;
-#endif /* LOG_USE_USEC */
-#if defined(LOG_USE_MSEC)
-    unsigned long msec;
-#endif /* LOG_USE_MSEC */
 #endif /* LOG_USE_TIME */
-#if defined(LOG_USE_THREAD)
-    unsigned long tid;
-#endif /* LOG_USE_THREAD */
-    if (log.lock)
+#if defined(LOG_USE_LOCK)
+    if (log_.lock)
     {
-        log.lock(log.data, 1);
+        log_.lock(log_.data, 1);
     }
+#endif /* LOG_USE_LOCK */
 #if defined(LOG_USE_TIME)
+    ctx.time = &log_.tm;
 #if defined(LOG_USE_USEC) || \
     defined(LOG_USE_MSEC)
     gettimeofday(&time, NULL);
-    if (log.time != time.tv_sec)
+    if (log_.time != time.tv_sec)
 #else /* !LOG_USE_USEC */
     sec = time(NULL);
-    if (log.time != sec)
+    if (log_.time != sec)
 #endif /* LOG_USE_USEC */
     {
 #if defined(LOG_USE_USEC) || \
     defined(LOG_USE_MSEC)
-        log.time = time.tv_sec;
+        log_.time = time.tv_sec;
 #else /* !LOG_USE_USEC */
-        log.time = sec;
+        log_.time = sec;
 #endif /* LOG_USE_USEC */
 #if defined(_WIN32)
         _tzset();
-        localtime_s(&log.tm, &log.time);
+        localtime_s(&log_.tm, &log_.time);
 #else /* !_WIN32 */
         tzset();
-        localtime_r(&log.time, &log.tm);
+        localtime_r(&log_.time, &log_.tm);
 #endif /* _WIN32 */
     }
 #if defined(LOG_USE_USEC)
-    usec = (unsigned long)(time.tv_usec);
+    ctx.usec = (unsigned long)(time.tv_usec);
 #endif /* LOG_USE_USEC */
 #if defined(LOG_USE_MSEC)
-    msec = (unsigned long)(time.tv_usec / 1000);
+    ctx.msec = (unsigned long)(time.tv_usec / 1000);
 #endif /* LOG_USE_MSEC */
 #endif /* LOG_USE_TIME */
 #if defined(LOG_USE_THREAD)
 #if defined(_WIN32)
-    tid = GetCurrentThreadId();
+    ctx.tid = GetCurrentThreadId();
 #elif defined(__linux__)
-    tid = (unsigned long)syscall(SYS_gettid);
+    ctx.tid = (unsigned long)syscall(SYS_gettid);
 #elif defined(__APPLE__)
 #if 1 /* macos(10.6), ios(3.2) */
     {
         uint64_t tid64;
         pthread_threadid_np(NULL, &tid64);
-        tid = (unsigned long)tid64;
+        ctx.tid = (unsigned long)tid64;
     }
 #else /* <macos(10.6), ios(3.2) */
-    tid = (unsigned long)syscall(SYS_thread_selfid);
+    ctx.tid = (unsigned long)syscall(SYS_thread_selfid);
 #endif /* macos(10.6), ios(3.2) */
 #elif defined(__FreeBSD__)
-    thr_self((unsigned long *)&tid);
+    thr_self((long *)&ctx.tid);
 #elif defined(__OpenBSD__)
-    tid = (unsigned long)getthrid();
+    ctx.tid = (unsigned long)getthrid();
 #elif defined(__NetBSD__)
-    tid = (unsigned long)_lwp_self();
+    ctx.tid = (unsigned long)_lwp_self();
 #else /* !_WIN32 */
-    tid = pthread_self();
+    ctx.tid = pthread_self();
 #endif /* _WIN32 */
 #endif /* LOG_USE_THREAD */
-    for (struct log_node *cur = log.head; cur; cur = cur->next)
+    ctx.file = file;
+    ctx.line = line;
+    ctx.level = level;
+    for (unsigned int i = 0; i < LOG_NODE_MAX && log_.node[i].flags; ++i)
     {
-        unsigned int lvl = cur->level;
-        if (cur->isok(level, lvl))
+        struct log_node *log = (log_.node + i);
+        if (log->isok(level, log->level))
         {
             va_list ap;
-            cur->level = level;
-            cur->file = file;
-            cur->line = line;
-#if defined(LOG_USE_TIME)
-#if defined(LOG_USE_USEC)
-            cur->usec = usec;
-#endif /* LOG_USE_USEC */
-#if defined(LOG_USE_MSEC)
-            cur->msec = msec;
-#endif /* LOG_USE_MSEC */
-#endif /* LOG_USE_TIME */
-#if defined(LOG_USE_THREAD)
-            cur->tid = tid;
-#endif /* LOG_USE_THREAD */
             va_start(ap, fmt);
-            cur->impl(cur, fmt, ap);
+            ctx.data = log->data;
+            log->impl(&ctx, fmt, ap);
             va_end(ap);
-            cur->level = lvl;
         }
     }
-    if (log.lock)
+#if defined(LOG_USE_LOCK)
+    if (log_.lock)
     {
-        log.lock(log.data, 0);
+        log_.lock(log_.data, 0);
     }
+#endif /* LOG_USE_LOCK */
 }
+
+#if defined(LOG_USE_LOCK)
+void log_lock(LOG_LOCK((*lock), , ), void *data)
+{
+    log_.lock = lock;
+    log_.data = data;
+}
+#endif /* LOG_USE_LOCK */
