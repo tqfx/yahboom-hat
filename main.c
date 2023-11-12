@@ -18,7 +18,6 @@
 */
 #include <stddef.h>
 #include <stdint.h>
-#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -45,45 +44,47 @@
 #include "i2c.h"
 #include "rgb.h"
 
-#define LOG_NODE_MAX 3
 #define LOG_USE_TIME
 #define LOG_USE_USEC
+#define LOG_NODE 3
 #include "log.c"
-enum
-{
-    LOG_TRACE,
-    LOG_DEBUG,
-    LOG_ERROR
-};
+#define LOG_TRACE 0
+#define LOG_DEBUG 1
+#define LOG_ERROR 2
 #define log_trace(...) log_log(LOG_TRACE, __VA_ARGS__)
 #define log_debug(...) log_log(LOG_DEBUG, __VA_ARGS__)
 #define log_error(...) log_log(LOG_ERROR, __VA_ARGS__)
 static char const *level_strings[] = {"TRACE", "DEBUG", "ERROR"};
-static LOG_IMPL_DEF(log_impl_file, ctx, fmt, ap);
+static LOG_IMPL_(log_impl_file, ctx, fmt, ap);
 static LOG_IMPL(log_impl_file, ctx, fmt, ap)
 {
     char buf[64];
     buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", ctx->time)] = '\0';
     fprintf(ctx->data, "%s.%06lu %-5s %s:%d: ", buf, ctx->usec, level_strings[ctx->level], ctx->file, ctx->line);
     vfprintf(ctx->data, fmt, ap);
-    fflush(ctx->data);
+}
+static LOG_ISOK(log_isge, level, lvl)
+{
+    return level >= lvl;
 }
 static char const *level_colors[] = {"\x1b[94m", "\x1b[36m", "\x1b[31m"};
-static LOG_IMPL_DEF(log_impl_pipe, ctx, fmt, ap);
+static LOG_IMPL_(log_impl_pipe, ctx, fmt, ap);
 static LOG_IMPL(log_impl_pipe, ctx, fmt, ap)
 {
+    if (isatty(fileno(ctx->data)) == 0)
+    {
+        log_impl_file(ctx, fmt, ap);
+        return;
+    }
     char buf[16];
-    int tty = isatty(fileno(ctx->data));
-    char const *white = tty ? "\x1b[0m" : "";
     buf[strftime(buf, sizeof(buf), "%H:%M:%S", ctx->time)] = '\0';
-    fprintf(ctx->data, "%s.%06lu %s%-5s%s %s%s:%d:%s ", buf, ctx->usec,
-            tty ? level_colors[ctx->level] : "", level_strings[ctx->level],
-            white, tty ? "\x1b[90m" : "", ctx->file, ctx->line, white);
+    fprintf(ctx->data, "%s.%06lu %s%-5s\x1b[0m ", buf, ctx->usec,
+            level_colors[ctx->level], level_strings[ctx->level]);
     vfprintf(ctx->data, fmt, ap);
 }
 static LOG_ISOK(log_is_1, level, lvl)
 {
-    return log_isge(level, lvl) && log_islt(level, LOG_ERROR);
+    return level >= lvl && level < LOG_ERROR;
 }
 
 enum led_mode
@@ -627,6 +628,7 @@ hat_config:
     hat_load_fan();
     hat_load_oled();
     log_debug("\n");
+    fflush(hat.log);
 }
 
 static long cpu_get_temp(void)
